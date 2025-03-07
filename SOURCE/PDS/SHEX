@@ -1,0 +1,35 @@
+         MACRO ,                                                GP10065
+&NM      SHEX  &OUT,&IN,&XL,&FILL=C' '  HEX OUTPUT FORMATTING   GP10065
+.*
+.*  CONVERT DATA TO PRINTABLE HEX FORMAT                        GP10081
+.*    ADDRESSES MAY NOT BE IN ddd(b) FORMAT                     GP10081
+.*    OUTVAR MAY NOT BE A REGISTER                              GP10081
+.*    THREE FORMS ARE SUPPORTED:                                GP10081
+.*    1) SHEX  OUTVAR,INVAR       USES L'INVAR FOR LENGTHS <=7  GP10081
+.*    2) SHEX  OUTVAR,INVAR,LN    LN IS INPUT LENGTH <=7        GP10081
+.*    3  SHEX  OUTVAR,(REG),LN    FORMAT REG VALUE OF LEN <=4   GP10081
+.*
+         LCLC  &L,&IL                                           GP10065
+         LCLA  &K                                               GP10081
+&K       SETA  K'&IN                                            GP10081
+         AIF   (&K LT 3).NOINREG                                GP10081
+         AIF   ('&IN'(&K,1) NE ')').NOINREG                     GP10081
+&NM      ST    &IN(1),COMMDWRD                                  GP10081
+         UNPK  &OUT.(2*&XL+1),COMMDWRD+4-&XL.(&XL+1)            GP10081
+         TR    &OUT.(2*&XL),COMMHXTR                            GP10081
+         AIF   (T'&FILL EQ 'O').MEND                            GP10065
+         MVI   &OUT+2*&XL,&FILL                                 GP10065
+         MEXIT ,                                                GP10081
+.NOINREG AIF   (T'&XL EQ 'O').DFLT                              GP10065
+&NM      UNPK  &OUT.(2*&XL+1),&IN.(&XL+1)                       GP10065
+         TR    &OUT.(2*&XL),COMMHXTR                            GP10081
+         AIF   (T'&FILL EQ 'O').MEND                            GP10065
+         MVI   &OUT+2*&XL,&FILL                                 GP10065
+         MEXIT ,                                                GP10065
+.DFLT    ANOP  ,                                                GP10065
+&L       SETC  'L'''                                            GP10065
+&NM      UNPK  &OUT.(2*&L&IN+1),&IN.(&L&IN+1)                   GP10065
+         TR    &OUT.(2*&L&IN),COMMHXTR                          GP10081
+         AIF   (T'&FILL EQ 'O').MEND                            GP10065
+         MVI   &OUT+2*&L&IN,&FILL                               GP10065
+.MEND    MEND  ,                                                GP10065

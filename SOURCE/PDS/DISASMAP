@@ -1,0 +1,35 @@
+DAMAP    TITLE 'DISASM  -  CONTROL BLOCK EXPANSION AND DATA MAPPING'
+* ------------------------------------------------------------------- *
+*                                                                     *
+*     GLOBAL OPTIONS.  SEE MACRO DISOPT FOR EXPLANATION OF OPTIONS.   *
+*                                                                     *
+*  DEFAULT MAXLINE UPPED TO 58 TO ALLOW 55 ASSEMBLER LINES PER PAGE.  *
+*                                                                     *
+* ------------------------------------------------------------------- *
+         GBLA  &TRNBRG,&MAXL,&MINL
+         GBLC  &TROPT,&DAPRT,&COMPRT
+         DISOPT COMLIST=ON,         ASSEMBLER'S NAME                   +
+               DALIST=ON,           DON'T PRINT DATA AREA              +
+               MAXLINE=59,          DEFAULT IS 55 LINES PER PAGE       +
+               MINLINE=10,          MINIMUM LINE COUNT ALLOWABLE IS 10 +
+               TRACE=ON,            GENERATE TRACE                     +
+               TRNBR=1000           1000 TRACE ENTRIES
+*--------------------------------------------------------------------*
+*                                                                    *
+*  MODULE NAME: DISASMAP                                             *
+*                                                                    *
+*  Function:                                                         *
+*   LISTING ONLY OF WORK AREA AND DSECT DEFINITIONS                  *
+*                                                                    *
+*--------------------------------------------------------------------*
+         PRINT ON,GEN,DATA
+DISASMAP START 0
+         COPY  DISASMDA
+         EJECT ,
+*---------------------------------------------------------------------*
+*                                                                     *
+*              COMMON DATA MAP                                        *
+*                                                                     *
+*---------------------------------------------------------------------*
+DISASM00 DISASMCM TYPE=DSECT
+         END   ,

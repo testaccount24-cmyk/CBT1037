@@ -1,0 +1,2339 @@
+DA09     TITLE 'DISASM09 - SOURCE CODE GENERATOR'               GP99134
+         MACRO
+&NM      SVCDEF &SVCNBR,&DESC                                   GP99134
+         LCLA   &LEN
+         AIF    ('&DESC'(1,1) NE '''').UNQUO                    GP99134
+&LEN     SETA   K'&DESC-2
+&NM      DC     AL1(&LEN-1),X'&SVCNBR',CL(&LEN)&DESC LN/HX/TXT  GP99134
+         MEXIT  ,                                               GP99134
+.UNQUO   ANOP   ,                                               GP99134
+&LEN     SETA   K'&DESC                                         GP99134
+&NM      DC     AL1(&LEN-1),X'&SVCNBR',CL(&LEN)'&DESC' LN/HX/TXT
+         MEND                                                   GP99134
+         COPY   DISASMGB
+*--------------------------------------------------------------------*
+*                                                                    *
+*  Module name: DISASM09                                             *
+*                                                                    *
+*  Function:                                                         *
+*   Source code generator.                                           *
+*                                                                    *
+*--------------------------------------------------------------------*
+DISASM09 MODHEAD BASE=(R12,R10)   ENTRY HOUSEKEEPING            GP99140
+         ITRACE ID=ENTRY
+         ZAP   CARDSEQ,CARDINC   COUNT CARDS                    GP99134
+         TM    PRINTFG2,$PFASM       PRINT ASSEMBLY TEXT ?      GP99132
+         BZ    GEN0015               NO                         GP99132
+         MVC   COMMSUBH(SUBHEADL),SUBHEAD
+         LA    R1,SUBHEADL           SUBHEADING LENGTH
+         STH   R1,COMMSUBL           SET LENGTH
+         MVI   COMMSUBL,X'FF'        SET NON-CENTERED INDICATOR
+         OI    PRTFLAG,$SUBH         SET FLAG                   GP99139
+         MVI   PRTCMD,$PRTHEAD       SET COMMAND                GP99139
+         BAL   R14,PRINTDAT          PRINT SUBHEADER            GP99139
+GEN0015  DS    0H                                               GP99132
+         LA    R1,COMMCSNM                                      GP99184
+         BAL   R14,FINDLABL  BUILD CROSS-REFERENCE BY NAME      GP99184
+         MVC   SRCLABL,COMMCSNM      SET CSECT NAME
+         MVC   SRCMNEM,CSCTOPCD      SET MNEMONIC TO 'CSECT'
+         MVC   SRCDISP,CHARZERO      DISPLACEMENT IS ZERO
+         MVC   PRTDATA(SRCL),SRC     SET PRINT DATA
+         BAL   R9,PUNCH000           PUNCH CSECT STATEMENT      GP99134
+         BAL   R9,PRTSTMT            PRINT CSECT STATEMENT      GP99134
+* ------------------------------------------------------------------- *
+*      Generate ENTRY statements                                      *
+* ------------------------------------------------------------------- *
+         ICM   R3,15,COMMESD         FIRST ESD ENTRY
+         BZ    GEN0050               NO ESD ENTRIES
+         USING ESDDATA,R3            DEFINE BASE
+         SPACE 1
+GEN0020  CLI   ESDTYPE,$ESDLR        LABEL?
+         BE    GEN0030               YES
+         CLI   ESDTYPE,$ESDPC        PRIVATE CODE?
+         BNE   GEN0035               NO                         GP10071
+GEN0030  CLC   ESDADDR,COMMCSAD+1    TOO LOW FOR OUR CSECT?
+         BL    GEN0035               YES                        GP10072
+         CLC   ESDADDR,COMMCSEO+1    TOO HIGH FOR OUR CSECT?    GP10071
+         BH    GEN0035               YES                        GP10072
+         CLC   ESDNAME,COMMCSNM      SAME AS THE CSECT NAME?
+         BE    GEN0035               YES                        GP10072
+         MVC   SRC(SRCL),SRC-1       CLEAR SOURCE AREA
+         MVC   SRCMNEM,ENTROPCD      SET OPCODE (ENTRY)
+         MVC   SRCOPER(L'ESDNAME),ESDNAME
+         MVC   PRTDATA(SRCL),SRC     SET PRINT DATA
+         LA    R1,ESDNAME                                       GP99184
+         BAL   R14,FINDLABL  BUILD CROSS-REFERENCE BY NAME      GP99184
+         BAL   R9,PUNCH000           PUNCH ENTRY STATEMENT      GP99134
+         BAL   R9,PRTSTMT            PRINT ENTRY STATEMENT      GP99134
+         B     GEN0040               LOOK FOR ANOTHER           GP10071
+         SPACE 1
+GEN0035  TM    ESDFLAG,$ESFXTRN      NEED AN EXTERNAL ?         GP10071
+         BZ    GEN0040                 NO                       GP10071
+         NI    ESDFLAG,255-$ESFXTRN  ONE IS ENOUGH              GP10071
+         MVC   SRC(SRCL),SRC-1       CLEAR SOURCE AREA          GP10071
+         MVC   SRCMNEM,=C'EXTRN'     SET OPCODE (EXTRN)         GP10071
+         CLI   ESDTYPE,$ESDWX        WEAK ?                     GP10071
+         BNE   *+8                     NO                       GP10071
+         MVI   SRCMNEM,C'W'          SET WXTRN                  GP10071
+         MVC   SRCOPER(L'ESDNAME),ESDNAME                       GP10071
+         MVC   PRTDATA(SRCL),SRC     SET PRINT DATA             GP10071
+         BAL   R9,PUNCH000           PUNCH ENTRY STATEMENT      GP10071
+         BAL   R9,PRTSTMT            PRINT ENTRY STATEMENT      GP10071
+GEN0040  DS    0H
+         ICM   R3,15,ESDNEXT         NEXT ESD ENTRY
+         BNZ   GEN0020               LOOP
+         DROP  R3                                               GP99141
+* ------------------------------------------------------------------- *
+*     FINISHED WITH PRELIMINARIES                                     *
+* ------------------------------------------------------------------- *
+GEN0050  DS    0H
+         SR    R3,R3                 INITIALIZE INSTRUCTION DISP
+         ST    R3,DISPI      SET INSTRUCTION DISPLACEMENT       GP99161
+         ST    R3,DISPL      CLEAR LABEL DISPLACEMENT           GP99161
+         L     R4,COMMTXT            INITIALIZE INSTRUCTION ADDRESS
+         LA    R5,COMMLABL   FIRST CSECT LABEL                  GP99161
+         MVI   DISPL,X'FF'           SET EOF FLAG               GP99162
+         USING LABLDSCT,R5           DEFINE BASE
+GEN0052  ICM   R5,15,LABLNEXT                                   GP99161
+         BZ    GEN0070               NO LABELS                  GP99162
+         MVC   DISPL,LABLDISP        SET LABEL DISPLACEMENT
+         B     GEN0070
+GEN0070  DS    0H
+         ICM   R6,15,COMMREF         FIRST REFERENCE ENTRY
+         USING REFDSCT,R6            DEFINE BASE
+         BZ    GEN0080               NO REFERENCES
+         MVC   DISPR,REFDISPI        SET REFERENCE DISP
+         B     GEN0090
+GEN0080  DS    0H
+         MVI   DISPR,X'FF'           SET EOF FLAG
+GEN0090  DS    0H
+         ICM   R7,15,COMMDATA        FIRST DATA AREA
+         USING DATADSCT,R7           DEFINE BASE
+         BZ    GEN0100               NO DATA AREAS
+         MVC   DISPD,DATABEGN        SET DATA AREA DISPLACEMENT
+         B     GENLOOP                                          GP99155
+GEN0100  DS    0H
+         MVI   DISPD,X'FF'           SET EOF FLAG
+* ------------------------------------------------------------------- *
+*                                                                     *
+*        Beginning of source generation loop                          *
+*                                                                     *
+* ------------------------------------------------------------------- *
+GENLOOP  DS    0H                                               GP99155
+         ITRACE ID=GENLOOP,          STARTING GEN LOOP                 +
+               DATA1=DISPI,          .. INSTRUCTION DISPLACEMENT       +
+               DATA2=DISPD           .. NEXT DATA AREA DISPLACEMENT
+         SPACE 1                                                GP99155
+* ------------------------------------------------------------------- *
+*        Generate a LABEL                                             *
+* ------------------------------------------------------------------- *
+LABELOOP CL    R3,DISPL      GEN A LABEL AT THIS TIME?          GP99146
+         BL    GEN0130               NO                         GP99155
+         BE    LABELSET                                         GP99155
+*NEXT*   BH    LABELEQU      OOPS - PASSED IT                   GP99153
+LABELEQU BAL   R8,MAKEEQU    CURRENT LABEL NEEDS EQU            GP99155
+         B     LABELBMP      TRY ANOTHER LABEL                  GP99155
+         SPACE 1                                                GP99155
+LABELSET CLC   LABLNAME,COMMCSNM  SAME AS CSECT?                GP99162
+         BE    LABELBMP      YES; IGNORE                        GP99162
+         MVC   LOCLABEL,LABLNAME  SAVE LABEL FOR CODE EXPANSION GP10012
+         LR    R15,R5             SAVE CURRENT                  GP10049
+         ICM   R5,15,LABLNEXT        NEXT LABEL                 GP10012
+         BZ    LABELEOF           NO MORE LABELS                GP10049
+         CLC   DISPL,LABLDISP     NEXT LABEL AT SAME LOCATION?  GP10049
+         BE    MAKEEQPV           YES; MAKE DS FOR THIS ONE     GP10049
+         MVC   DISPL,LABLDISP        SET NEW LABEL DISPLACEMENT GP10012
+         B     GEN0130                                          GP10012
+         SPACE 1                                                GP99155
+MAKEEQPV LR    R5,R15        EXPAND PREVIOUS LABEL              GP10049
+         LA    R8,LABELBMP   THEN BUMP TO NEXT                  GP10049
+         SPACE 1                                                GP99155
+MAKEEQU  CLC   LABLNAME,COMMCSNM  SAME AS CSECT?                GP99162
+         BE    LABELBMP      YES; IGNORE                        GP99162
+         MVC   SRC(SRCL),SRC-1       CLEAR SOURCE STATEMENT AREA
+         UNPK  SRCDISP(9),LABLDISP(5)   UNPACK DISPLACEMENT     GP99155
+         TR    SRCDISP,COMMHXTR      TRANSLATE TO PRINTABLE     GP99155
+         MVI   SRCDISP+8,C' '        RESTORE THE BLANK          GP99155
+         MVC   SRCLABL,LABLNAME      SET LABEL                  GP99155
+         MVC   SRCMNEM(3),=C'EQU'    SET OPCODE                 GP99155
+         MVC   SRCOPER(L'COMMCSNM),COMMCSNM  COPY CSECT NAME    GP99155
+         LA    R1,COMMCSNM                                      GP99184
+         BAL   R14,FINDLABL  BUILD CROSS-REFERENCE BY NAME      GP99184
+         TRT   SRCOPER(9),BLKTRT     FIND NEXT BLANK            GP99155
+         ICM   R0,15,LABLDISP        ANY OFFSET?                GP10012
+         BZ    MAKEEQU0                                         GP10012
+         MVI   0(R1),C'+'    JOIN                               GP99155
+         MVC   WORKNBR,LABLDISP    OFFSET TO BE CONVERTED
+         LA    R1,1(,R1)     SET NEXT AVAILABLE ADDRESS         GP99155
+         ST    R1,GENADDR    PASS TO FUNCTION                   GP99155
+         BAL   R15,GENNBR00  BUILD THE NUMBER                   GP99155
+MAKEEQU0 MVC   PRTDATA(SRCL),SRC     COPY STATEMENT TO PRINT    GP99155
+         BAL   R9,PUNCH000           PUNCH SOURCE STATEMENT     GP99155
+         BAL   R9,PRTSTMT            PRINT SOURCE STATEMENT     GP99155
+         BR    R8            RETURN TO CALLER                   GP99161
+         SPACE 1                                                GP99155
+LABELBMP ICM   R5,15,LABLNEXT        NEXT LABEL                 GP99153
+         MVC   DISPL,LABLDISP        SET NEW LABEL DISPLACEMENT GP99155
+         BNZ   LABELOOP                                         GP99155
+LABELEOF MVI   DISPL,X'FF'           SET END OF FILE
+         SPACE 1                                                GP99155
+* ------------------------------------------------------------------- *
+*        Test for DATA area                                           *
+* ------------------------------------------------------------------- *
+GEN0130  DS    0H
+         CL    R3,COMMCSLN           REACHED END OF MODULE?     GP99155
+         BNL   GEN0700               YES.. COPY ASSEMBLER INPUT GP99155
+         CL    R3,DISPD      IS THIS DATA?                      GP99146
+         BE    GEN0390               YES
+         BH    ERR0010               INTERNAL ERROR
+         TM    DISPI+3,X'01'         DISPLACEMENT ODD?
+         BO    ERR0040               YES
+* ------------------------------------------------------------------- *
+*        Flag DROP statements for USING blocks                        *
+* ------------------------------------------------------------------- *
+         XC    COMMDWRD,COMMDWRD     CLEAR DROP FLAGS           GP99146
+         LA    R8,COMMUSNG           POINT TO FIRST USING BLOCK GP99146
+         USING USNGDSCT,R8           DEFINE BASE                GP99146
+GEN0140  ICM   R8,15,USNGNEXT        NEXT USING BLOCK           GP99146
+         BZ    GEN0160               LOOP                       GP99146
+         TM    USNGFLAG,$USNGND      DISPLACEMENTS?
+         BO    GEN0140               NO.. NEVER NEED A DROP     GP99146
+         CL    R3,USNGEND    TIME FOR 'DROP' STATEMENT?         GP99146
+         BNE   GEN0140               NO                         GP99146
+         SR    R0,R0                                            GP99146
+         IC    R0,USNGBASE   GET THE REGISTER NUMBER            GP99146
+         BAL   R14,TESTUSE   SEE WHETHER WE WILL BE USING       GP99147
+           B   GEN0140       IF SO, IGNORE THIS DROP            GP99147
+         LA    R1,30         SET FOR LEFT-MOST NON-SIGN BIT     GP99146
+         SR    R1,R0         GET PLACES TO SHIFT                GP99146
+         LA    R0,1                                             GP99146
+         SLL   R0,0(R1)      SHIFT REGISTER BIT LEFT            GP99146
+         O     R0,COMMDWRD   COMBINE WITH OTHERS                GP99146
+         ST    R0,COMMDWRD   AND STASH IT BACK                  GP99146
+         B     GEN0140                                          GP99146
+* ------------------------------------------------------------------- *
+*        Flag DROP statements for BASE blocks                         *
+* ------------------------------------------------------------------- *
+GEN0160  LA    R8,COMMBASE   POINT TO FIRST BLOCK               GP99146
+         USING BASEDSCT,R8           DEFINE BASE                GP99146
+GEN0170  ICM   R8,15,BASENEXT        NEXT BASE BLOCK            GP99146
+         BZ    GEN0180               DONE; GO TO EXPAND         GP99146
+         CL    R3,BASEEND    TIME FOR 'DROP' STATEMENT?         GP99146
+         BNE   GEN0170               NO                         GP99146
+         SR    R0,R0                                            GP99146
+         IC    R0,BASEREG    GET THE REGISTER NUMBER            GP99146
+         BAL   R14,TESTUSE   SEE WHETHER WE WILL BE USING       GP99147
+           B   GEN0170       IF SO, IGNORE THIS DROP            GP99147
+         LA    R1,30         SET FOR LEFT-MOST NON-SIGN BIT     GP99146
+         SR    R1,R0         GET PLACES TO SHIFT                GP99146
+         LA    R0,1                                             GP99146
+         SLL   R0,0(R1)      SHIFT REGISTER BIT LEFT            GP99146
+         O     R0,COMMDWRD   COMBINE WITH OTHERS                GP99146
+         ST    R0,COMMDWRD   AND STASH IT BACK                  GP99146
+         B     GEN0170       NOW DO ANOTHER                     GP99146
+         SPACE 1                                                GP99146
+*  AS AN ADDED BONUS, SEE WHETHER WE WILL BE GENERATING A USING GP99147
+*  STATEMENT AT THIS ADDRESS. IF SO, WE CAN SKIP THE DROP       GP99147
+         PUSH  USING                                            GP99147
+         DROP  R8                                               GP99147
+TESTUSE  LA    R2,COMMUSNG                                      GP99147
+         USING USNGDSCT,R2   DECLARE USING                      GP99147
+TESTUSEL ICM   R2,15,USNGNEXT  LINK?                            GP99147
+         BZ    TESTBAS       NO MORE; TEST BASES                GP99147
+         CLM   R0,1,USNGBASE  REQUESTED REGISTER?               GP99147
+         BNE   TESTUSEL      NO                                 GP99147
+         TM    USNGFLAG,$USNGND  DISPLACEMENTS?                 GP99147
+         BNZ   TESTUSEL      NO; NOTHING TO TEST                GP99147
+         CL    R3,USNGBEGN   MATCHING OFFSET?                   GP99147
+         BNE   TESTUSEL                                         GP99147
+         BER   R14           YES; SKIP THIS REGISTER            GP99147
+TESTBAS  LA    R2,COMMBASE                                      GP99147
+         USING BASEDSCT,R2   DECLARE USING                      GP99147
+TESTBASL ICM   R2,15,BASENEXT  LINK?                            GP99147
+         BZ    4(,R14)       NO MORE; RETURN UNUSED             GP99147
+         CLM   R0,1,BASEREG   REQUESTED REGISTER?               GP99147
+         BNE   TESTBASL      NO                                 GP99147
+         CL    R3,BASEBEGN   MATCHING OFFSET?                   GP99147
+         BNE   TESTBASL                                         GP99147
+         BR    R14           YES; SKIP THIS REGISTER            GP99147
+         POP   USING                                            GP99147
+         SPACE 1                                                GP99146
+* ------------------------------------------------------------------- *
+*        Generate DROP statement                                      *
+* ------------------------------------------------------------------- *
+GEN0180  ICM   R9,15,COMMDWRD  LOAD THE REGISTERS TO DROP       GP99146
+         BZ    GEN0190       NONE; SKIP THIS                    GP99146
+         MVC   SRC(SRCL),SRC-1       CLEAR SOURCE AREA          GP99146
+         MVC   SRCMNEM,DROPOPCD      SET OPCODE                 GP99146
+         LA    R2,SRCOPER-1  POINT TO OPERAND FIELD             GP10055
+         LA    R8,16         MAX OF SIXTEEN DROPS               GP10055
+         OR    R9,R8         MAKE LOW NON-ZERO                  GP10055
+         SR    R8,R8         CURRENT REGISTER NUMBER            GP10055
+GEN0182  BXH   R9,R9,GEN0186  SHIFT, TEST, AND SKIP IF OFF      GP10055
+         MVI   0(R2),C','    SEPARATOR                          GP10055
+         LA    R2,1(R2)                                         GP10055
+         ST    R2,GENADDR    SET NEXT O/P POSITION              GP10055
+         LR    R1,R8         COPY CURRENT REGISTER              GP10055
+         BAL   R15,GENREG01  EXPAND REGISTER NAME               GP10055
+         LR    R2,R14        SET NEXT BLANK                     GP10055
+GEN0186  LA    R8,1(,R8)     TRY NEXT REGISTER                  GP10055
+         CH    R8,=H'16'     DONE ALL ?                         GP10055
+         BL    GEN0182       NOT YET                            GP10055
+         MVI   SRCOPER-1,C' '    REMOVE LEADING COMMA           GP10055
+         MVC   PRTDATA(SRCL),SRC     SET PRINT DATA             GP99146
+         BAL   R9,PUNCH000           PUNCH DROP STATEMENT       GP99134
+         BAL   R9,PRTSTMT            PRINT DROP STATEMENT       GP99134
+         SPACE 1                                                GP99146
+* ------------------------------------------------------------------- *
+*        Generate USING statements for USING blocks                   *
+* ------------------------------------------------------------------- *
+GEN0190  LA    R8,COMMUSNG   FIRST USING BLOCK                  GP99146
+         USING USNGDSCT,R8           DEFINE BASE                GP99146
+GEN0200  ICM   R8,15,USNGNEXT  NEXT USING BLOCK                 GP99146
+         BZ    GEN0270       NO MORE USING BLOCKS               GP99146
+         TM    USNGFLAG,$USNGND  DISPLACEMENTS?                 GP99146
+         BZ    GEN0220       YES.. DISPLACEMENTS MUST MATCH     GP99146
+         LTR   R3,R3         FIRST TIME EVER?                   GP99146
+         BNZ   GEN0200       NO; IGNORE                         GP99146
+         B     GEN0230       EXPAND AT OFFSET 0                 GP99146
+         SPACE 1                                                GP99146
+GEN0220  CL    R3,USNGBEGN   TIME FOR 'USING' STATEMENT?        GP99146
+         BNE   GEN0200               NO                         GP99146
+GEN0230  MVC   SRC(SRCL),SRC-1       CLEAR SOURCE AREA          GP99146
+         MVC   SRCMNEM,USNGOPCD      SET OPCODE
+         LA    R1,USNGLBNM   YES: USE LABEL                     GP03064
+         CLI   USNGLBNM,C' '   IS THERE A LABEL ?               GP03064
+         BH    GEN0230L      YES; USE IT                        GP03064
+         LA    R1,USNGDSNM   POINT TO DSECT NAME                GP03064
+GEN0230L MVC   SRCOPER(8),0(R1)   SET DSECT OR LABEL NAME       GP03064
+         LA    R1,SRCOPER
+         BAL   R14,FINDLABL  REFERENCE IT
+         TRT   SRCOPER(9),BLKTRT     FIND NEXT BLANK            GP99146
+         ST    R1,GENADDR            SET OUTPUT ADDRESS
+         BAL   R15,GENCOMMA          GENERATE COMMA             GP99146
+         MVC   WORKREG,USNGBASE      COPY REGISTER
+         BAL   R15,GENREG00          GENERATE REGISTER          GP99146
+         MVC   PRTDATA(SRCL),SRC     SET PRINT DATA
+         BAL   R9,PUNCH000           PUNCH USING STATEMENT      GP99134
+         BAL   R9,PRTSTMT            PRINT USING STATEMENT      GP99134
+         B     GEN0200       DO ANOTHER                         GP99146
+         SPACE 1                                                GP99146
+* ------------------------------------------------------------------- *
+*        Generate using statements for BASE blocks                    *
+* ------------------------------------------------------------------- *
+GEN0270  LA    R8,COMMBASE   FIRST USING BLOCK                  GP99146
+         USING BASEDSCT,R8           DEFINE BASE                GP99146
+GEN0280  ICM   R8,15,BASENEXT        NEXT BASE BLOCK            GP99146
+         BZ    GEN0330               NO BASE BLOCKS             GP99146
+         CL    R3,BASEBEGN   TIME FOR 'USING' STATEMENT?        GP99146
+         BNE   GEN0280               NO                         GP99146
+         MVC   SRC(SRCL),SRC-1       CLEAR SOURCE AREA
+         MVC   SRCMNEM,USNGOPCD      SET OPCODE
+         CL    R3,BASEDISP   OFFSET SAME AS CURRENT ADDRESS?    GP99146
+         BNE   GEN0290       NO                                 GP99146
+         MVI   SRCOPER,C'*'  IF WE GET LUCKY?                   GP99146
+         CLI   LOCLABEL,C' '  IS THE NEXT INSTRUCTION LABELED?  GP99169
+         BNH   GEN0282       NO; TRY *                          GP99169
+         MVC   SRCOPER(8),LOCLABEL  MAKE USING NAME,RN          GP99169
+         LTR   R3,R3         FIRST TIME?                        GP99146
+         BZ    GEN0282       YES; SKIP LABEL (WILL BE CSECT)    GP99146
+         LA    R1,LOCLABEL                                      GP99184
+         BAL   R14,FINDLABL  BUILD CROSS-REFERENCE BY NAME      GP99184
+GEN0282  TRT   SRCOPER(9),BLKTRT     FIND NEXT BLANK            GP99146
+         ST    R1,GENADDR            SET ADDRESS                GP99146
+         LTR   R3,R3         FIRST TIME?                        GP99146
+         BNZ   GEN0310       NO; JUST ADD REGISTER              GP99146
+GEN0290  MVC   SRCOPER(8),COMMCSNM   SET OPERAND (CSECT'S NAME) GP99146
+         LA    R1,COMMCSNM                                      GP99184
+         BAL   R14,FINDLABL  BUILD CROSS-REFERENCE BY NAME      GP99184
+GEN0300  TRT   SRCOPER(9),BLKTRT     FIND NEXT BLANK            GP99146
+         ST    R1,GENADDR            SET ADDRESS
+         ICM   R0,15,BASEDISP        DISPLACEMENT REFERRED TO
+         BZ    GEN0310               DIRECTLY AT CSECT
+         MVI   0(R1),C'+'            INSERT PLUS
+         LA    R1,1(,R1)             NEXT
+         ST    R1,GENADDR            SET ADDRESS
+         ST    R0,WORKNBR    SET LABEL                          GP99161
+         BAL   R15,GENNBR00          GENERATE NUMERIC VALUE     GP99146
+GEN0310  DS    0H
+         BAL   R15,GENCOMMA          INSERT COMMA               GP99146
+         MVC   WORKREG,BASEREG       COPY REGISTER
+         BAL   R15,GENREG00          GENERATE REGISTER          GP99146
+         MVC   PRTDATA(SRCL),SRC     SET PRINT DATA
+         BAL   R9,PUNCH000           PUNCH USING STATEMENT      GP99134
+         BAL   R9,PRTSTMT            PRINT USING STATEMENT      GP99134
+         B     GEN0280       LOOP                               GP99146
+         SPACE 2                                                GP99146
+* ------------------------------------------------------------------- *
+*        Generate an instruction                                      *
+* ------------------------------------------------------------------- *
+GEN0330  DS    0H
+         SR    R8,R8                 CLEAR REGISTER
+         ICM   R8,1,0(R4)            POSSIBLE OPCODE
+         BZ    ERR0020               NOT A VALID OPCODE
+         LR    R1,R4         PASS INSTRUCTION ADDRESS           GP99137
+         BAL   R14,GETOPENT  LOOK IT UP                         GP99137
+           B   ERR0020         NOT A VALID CODE                 GP99137
+         LR    R8,R15        MOVE TO DESIRED REGISTER           GP99137
+         STH   R0,OPLENGTH   SAVE INSTRUCTION LENGTH            GP99137
+         USING OPDSECT,R8            DEFINE BASE
+         LTR   R0,R0                 VALID LENGTH ?             GP10018
+         BZ    ERR0020               NOT A VALID OPCODE
+         ITRACE ID=GENINSTR,         GENERATING A VALID INSTRUCTION    +
+               DATA1=(R4),           .. INSTRUCTION                    +
+               DATA2=OPMNEM          .. OPCODE TABLE DATA
+         BAL   R9,GEN0600            GENERATE DISP AND HEX      GP99146
+         SR    R15,R15               CLEAR REGISTER
+         IC    R15,OPFORM            OPCODE FORM
+         SLL   R15,2                 MULTIPLY BY 4
+         AL    R15,=A(FMTTABLE)   GENERATING ROUTINE'S ADDRESS  GP10071
+         L     R15,0(,R15)        LOAD ADDRESS AND              GP10071
+         BR    R15                   GENERATE THE INSTRUCTION
+GEN0340  DS    0H
+         TM    OPFLAGS,$OPCCA+$OPCCL+$OPCCC   CONDITION CODE CHANGED?
+         BZ    GEN0350               NO
+         MVC   SAVEFLAG,OPFLAGS      SAVE CONDITION CODE FLAGS
+GEN0350  DS    0H
+         TM    OPFLAGS,$OPNCMNT      COMMENT PRESENT?
+         BO    GEN0360               NO
+         CLI   SRCCMNT,C' '       ALREADY USED (SVC)?           GP10035
+         BH    GEN0360            YES; DON'T CLOBBER            GP10035
+         LA    R15,OPCMNT                                       GP10018
+         TM    OPFLAGS,$OPMASK    INSTRUCTION MASK PRESENT?     GP10018
+         BZ    *+8           NO                                 GP10018
+         LA    R15,OPCMNT+L'OPMASK                              GP10018
+         CLC   =C'05',SRCOBJ1     BALR?                         GP10024
+         BE    GEN0354                                          GP10049
+         CLC   =C'0D',SRCOBJ1     BASR?                         GP10049
+         BNE   GEN0355                                          GP10024
+GEN0354  CLI   SRCOBJ1+3,C'0'       Rn,R0 ?                     GP10024
+         BNE   GEN0358                                          GP10024
+         CLI   SRCOBJ1+2,C'0'       R0,R0 ?                     GP10026
+         BE    GEN0360                SKIP COMMENT              GP10026
+         LA    R15,=CL12'BASE'                                  GP10024
+         B     GEN0358                                          GP10024
+GEN0355  CLC   =C'06',SRCOBJ1     BCTR?                         GP10024
+         BNE   GEN0356                                          GP10024
+         CLI   SRCOBJ1+3,C'0'       Rn,R0 ?                     GP10024
+         BNE   GEN0358                                          GP10024
+         LA    R15,=CL12'DECREMENT'                             GP10024
+         B     GEN0358                                          GP10024
+GEN0356  CLC   =C'45',SRCOBJ1     PLIST BRANCH ?                GP10049
+         BNE   GEN0358       NO                                 GP10018
+         CLI   SRCOBJ1+2,C'0'     BAL a, CALL ?                 GP10062
+         BL    GEN0358       YES, NOT NUMERIC                   GP10062
+         CLI   SRCOBJ1+2,C'1'     BAL 0, / BAL 1,  PLISTS       GP10049
+         BH    GEN0358       NO                                 GP10049
+         LA    R15,DCPLIST                                      GP10018
+GEN0358  MVC   SRCCMNT(L'OPCMNT),OPCMNT-OPCMNT(R15)  COMMENT    GP10018
+GEN0360  DS    0H
+         ITRACE ID=PRTSRC
+         MVC   SRCLABL,LOCLABEL  PLACE LABEL ON OUTPUT          GP99146
+         MVC   LOCLABEL,LOCLABEL-1   AND CLEAR FOR NEXT USE     GP99146
+         MVC   PRTDATA(SRCL),SRC     SET PRINT DATA
+         CL    R3,DISPR      LABEL REFERENCE USED?              GP99184
+         BNE   GEN0366               NO                         GP99184
+         ICM   R2,15,REFOPER1  REFERENCE 1 USED?                GP99184
+         BZ    GEN0363       NO                                 GP99184
+         BAL   R14,REFLABEL  MAKE REFERENCE CROSS               GP99184
+GEN0363  ICM   R2,15,REFOPER2  REFERENCE 2 USED?                GP99184
+         BZ    GEN0366       NO                                 GP99184
+         BAL   R14,REFLABEL  MAKE REFERENCE CROSS               GP99184
+*EN0366  ITRACE ID=PUNCHSRC
+GEN0366  BAL   R9,PUNCH000           PUNCH SOURCE STATEMENT     GP99146
+         BAL   R9,PRTSTMT            PRINT THE GENERATED INSTRUCTION
+         CL    R3,DISPR      LABEL REFERENCE USED?              GP99146
+         BNE   GEN0380               NO
+         ICM   R6,15,REFNEXT         NEXT REFERENCE BLOCK
+         BZ    GEN0370               NO MORE REFERENCE BLOCKS
+         MVC   DISPR,REFDISPI        SET DISPLACEMENT
+         ITRACE ID=NEXTREF,          WE HAVE A NEW REFERENCE BLOCK     +
+               DATA1=DISPR           .. INSTRUCTION'S DISPLACEMENT
+         B     GEN0380
+GEN0370  DS    0H
+         ITRACE ID=REFEOF            NO MORE REFERENCE BLOCKS
+         MVI   DISPR,X'FF'           SET EOF FLAG
+GEN0380  DS    0H
+         AH    R3,OPLENGTH           UPDATE DISPLACEMENT
+         AH    R4,OPLENGTH           UPDATE INSTRUCTION ADDRESS
+         ST    R3,DISPI      UPDATE CONTROL DATA                GP99161
+         ITRACE ID=NEWDISPI,         NEW DISPLACEMENT                  +
+               RDATA1=R3,            .. DISPLACEMENT                   +
+               RDATA2=R4             .. ASSOCIATED STORAGE ADDRESS
+         B     GENLOOP               LOOP                       GP99155
+* ------------------------------------------------------------------- *
+*        Generate constants                                           *
+* ------------------------------------------------------------------- *
+GEN0390  DS    0H
+         ITRACE ID=GENDATA,          IN A DATA AREA                    +
+               DATA1=DATABEGN,       .. BEGINNING POINT                +
+               DATA2=DATAEND         .. ENDING POINT
+         L     R8,AOP                OPCODE TABLE ADDRESS
+         L     R8,0(,R8)             DC'S DUMMY ENTRY ADDRESS
+         CLI   DATATYPE,$DATAACN     ADCON?
+         BE    GEN0460               YES
+         CLI   DATATYPE,$DATAARL     ADCON TO BE RELATIVIZED?   GP05212
+         BE    GEN0458               YES                        GP05212
+         CLI   DATATYPE,$DATAVCN     V-CON?
+         BE    GEN0500               YES
+         CLI   DATATYPE,$DATACXD     CXD (PSEUDO AREA SIZE)?
+         BE    GEN0530               YES
+         CLI   DATATYPE,$DATAQ       Q (PSEUDO AREA DISPLACEMENT)?
+         BE    GEN0540               YES
+         L     R15,DATAEND   ASSUME FULL DATA SIZE              GP99162
+*WHOLY   CLI   DISPL,X'FF'           END OF LABELS REACHED?     GP99170
+*WASTED  BE    GEN0400               YES                        GP99170
+         ICM   R9,15,DISPL   NEXT LABEL'S DISPLACEMENT          GP10025
+         BM    GEN0400               YES                        GP10025
+         CLR   R9,R15        LABEL WITHIN DATA?                 GP99161
+         BNL   GEN0400               NO
+         LR    R15,R9        USE LABEL OFFSET                   GP99162
+         BCTR  R15,0                 MINUS 1                    GP99162
+GEN0400  ST    R15,WORKNBR   LIMIT TO 1 BYTE BEFORE LABEL       GP99161
+         ITRACE ID=XXXXXXXX,DATA1=WORKNBR,DATA2=DISPD
+***********************************************************************
+**                                                                   **
+**  EXPAND DATA:                                                     **
+**                                                                   **
+**    WHEN DATAASMT FIELD SET, AND DATAILEN>0 THEN WE KNOW WHAT TYPE **
+**    OF DATA TO EXPAND. VALIDATE CHARACTER AS SUCH (SINCE WE NEED   **
+**    TO TRANSLATE BACK), AND LIMIT LENGTH TO ONE CARD.              **
+**                                                                   **
+**    WHEN DATAASMT IS < C' ', WE NEED TO GUESS AND SPLIT LIKELY     **
+**    PIECES. ARBITRARILY, WE WILL NOT PROCESS DATA AS CHARACTER     **
+**    UNLESS THEIR LENGTH IS AT LEAST THREE BYTES.                   **
+**                                                                   **
+***********************************************************************
+         L     R9,WORKNBR         END OF DATA DISPLACEMENT      GP99161
+         S     R9,DISPD           STARTING DISPLACEMENT         GP99161
+         BM    ERR0030       OOPS?                              GP99169
+         LA    R9,1(,R9)     LENGTH                             GP99169
+         CLI   DATATYPE,$DATADS   FILLER ?                      GP10066
+         BE    GENDSLEN           YES; FORCE  DC XL'000'        GP10066
+         CLI   DATAASMT,C' '  ASSEMBLER DC TYPE SET?            GP99169
+         BNH   GENDCANY      NO; WE NEED TO GUESS               GP99169
+         SR    R0,R0                                            GP99169
+         ICM   R0,3,DATAILEN  ITEM LENGTH SET?                  GP99169
+         BZ    GENDCANY      NO; TREAT AS UNDEFINED             GP99169
+         CR    R9,R0         LONGER THAN ITEM?                  GP99169
+         BNH   *+6           NO                                 GP99169
+         LR    R9,R0         TRUNCATE TO ITEM LENGTH            GP99169
+         CLI   DATAASMT,C'C'  CHARACTER DATA ?                  GP99169
+         BNE   GENDCNTC      NO                                 GP99169
+         CH    R9,=H'52'     MAX LENGTH-1 OF DC C'XXXXX'        GP99161
+         BNH   *+8                                              GP99161
+         LA    R9,52         TRUNCATE TO MAX ON ONE CARD        GP99161
+         LR    R15,R9                                           GP99181
+         BCTR  R15,0         MAKE EX LENGTH                     GP99181
+         EX    R15,EXTSTZER  ALL HEX ZERO (E.G., DS)            GP99181
+         BZ    GENDCANY      YES; DON'T DO AS CHARACTER         GP99181
+         B     GENDCCHR      GO TO CHARACTER GENERATION         GP99169
+         SPACE 1                                                GP99169
+GENDCNTC CLI   DATAASMT,C'A' NON-RELOCATABLE ADCON?             GP99170
+         BE    GENDCI4       YES; GENERATE UP TO 4-BYTE INTEGER GP99170
+         CLI   DATAASMT,C'F' INTEGER?                           GP99170
+         BE    GENDCI4       YES; GENERATE UP TO 4-BYTE INTEGER GP99170
+         CLI   DATAASMT,C'H' HALF-WORD INTEGER?                 GP99170
+         BE    GENDCI2       YES; GENERATE UP TO 2-BYTE INTEGER GP99170
+         CLI   DATAASMT,C'D' DOUBLE-WORD - DO ONLY IF ZERO      GP99181
+         BE    GENDCD        YES; SEE IF ALL ZERO               GP99181
+         CLI   DATAASMT,C'E' FLOAT - DO ONLY IF ZERO            GP99181
+         BE    GENDCD        YES; SEE IF ALL ZERO               GP99181
+         CLI   DATAASMT,C'P' PACKED DECIMAL - VARIFY PRIOR      GP99183
+         BE    GENDCP          TO PROCESSING, ELSE DO AS HEX    GP99183
+         CLI   DATAASMT,C'S' SYMBOLIC ADDRESS ?                 GP99170
+         BNE   GENDCNTS      NO                                 GP99170
+         SPACE 1                                                GP99169
+GENDCS2  CH    R9,=H'2'      SUPPORTED LENGTH?                  GP99170
+         BNE   GENDSHEX      NO; DO AS HEX                      GP99170
+         STH   R9,OPLENGTH   SAVE INSTRUCTION LENGTH            GP99170
+         BAL   R9,GEN0600    PREPARE BASIC DC CARD              GP99170
+         LH    R9,OPLENGTH   RESTORE                            GP99170
+         MVC   SRCOPER(2),=C'S('                                GP99170
+         LA    R15,SRCOPER+2  SET INSERTION ADDRESS             GP99170
+         LA    R14,ALIGNDCS                                     GP99181
+         EX    R4,EXTMODD    ALIGNED?                           GP99181
+         BZ    GENDCS2A      YES                                GP99181
+         LA    R15,SRCOPER+4                                    GP99181
+         MVC   SRCOPER+1(3),=C'L2('  (LENGTH ALREADY CHECKED)   GP99181
+GENDCS2A ST    R15,GENADDR   SET INSERTION ADDRESS              GP99170
+         CL    R3,DISPR      LABEL REFERENCE USED?              GP99179
+         BNE   GENDCS2N      NO                                 GP99179
+         ICM   R2,15,REFOPER1  LABEL REFERENCE?                 GP99179
+         BZ    GENDCS2N      NO (HUH? - ERROR IN DA08?)         GP99179
+         L     R1,GENADDR    CURRENT ADDRESS IN SRCOPER         GP99179
+         MVC   0(L'LABLNAME,R15),LABLNAME-LABLDSCT(R2) GET NAME GP99179
+         BAL   R14,REFLABEL  BUILD CROSS-REFERENCE BY NAME      GP99184
+         TRT   0(9,R15),BLKTRT  FIND BLANK AT END               GP99179
+         ST    R1,GENADDR    AND UPDATE ADDRESS                 GP99179
+         ICM   R0,15,REFDISP1  DISPLACEMENT ZERO?               GP99179
+         BZ    GENDCS2M      YES; NO OFFSET                     GP99179
+         MVI   0(R1),C'+'    INSERT PLUS                        GP99179
+         LA    R1,1(,R1)     BUMP ONE                           GP99179
+         ST    R1,GENADDR    AND UPDATE ADDRESS                 GP99179
+         ST    R0,WORKNBR    SET DISPLACEMENT                   GP99179
+         BAL   R15,GENNBR00  FORMAT DISPLACEMENT                GP10055
+GENDCS2M BAL   R15,GENPRN2   MAKE CLOSING PARENTHESIS           GP99179
+         ICM   R6,15,REFNEXT   GET NEXT REFERENCE BLOCK         GP99179
+         MVI   DISPR,X'FF'   IN CASE THERE ISN'T ONE            GP99179
+         BZ    GEN0570       NO MORE                            GP99179
+         MVC   DISPR,REFDISPI  ELSE SET ITS OFFSET              GP99179
+         ITRACE ID=NEXTREF,DATA1=DISPR                          GP99179
+         B     GEN0570                                          GP99179
+ALIGNTAB DC    C'A',C'4',AL1(3)  ASM TYPE / ALIGNED LEN / ZERO BITS
+         DC    C'D',C'8',AL1(7)                                 GP99181
+         DC    C'E',C'4',AL1(3)                                 GP99181
+ALIGNDC4 DC    C'F',C'4',AL1(3)                                 GP99181
+ALIGNDCS DC    C'H',C'2',AL1(1)                                 GP99181
+         DC    C'S',C'2',AL1(1)                                 GP99181
+ALIGNCNT EQU   (*-ALIGNTAB)/3    NUMBER OF ENTRIES              GP99181
+GENDCS2N MVC   WORKNBR+2(2),0(R4)  COPY S ADDRESS               GP99179
+         NC    WORKNBR,=X'00000FFF'  ISOLATE DISPLACEMENT       GP99170
+         BAL   R15,GENNBR00  MAKE A NUMBER                      GP99170
+         TM    0(R4),X'F0'   ANY BASE?                          GP99170
+         BZ    GENDCS2P      NO; JUST CLOSE                     GP99170
+         BAL   R15,GENPRN1   MAKE LEFT PARENTHESIS              GP99170
+         UNPK  WORKREG,0(1,R4)  SET REGISTER NUMBER             GP99170
+         BAL   R15,GENREG00  FORMAT REGISTER                    GP99170
+         BAL   R15,GENPRN2   CLOSE PARENTHESIS                  GP99170
+GENDCS2P BAL   R15,GENPRN2   CLOSE PARENTHESIS                  GP99170
+         B     GEN0570       DISPLAY THIS                       GP99170
+         SPACE 1                                                GP99169
+GENDCD   CH    R9,=H'8'      NOT TOO LONG?                      GP99181
+         BH    GENDSHEX      TOO LONG, SO LONG                  GP99181
+         LR    R15,R9                                           GP99181
+         BCTR  R15,0                                            GP99181
+         EX    R15,EXTSTZER  IS IT HEX ZERO ?                   GP99181
+         BNZ   GENDSHEX      NO; NOT SUPPORTED (YET?)           GP99181
+         XC    WORKNBR,WORKNBR  SET VALUE TO ZERO               GP99181
+         B     GENDCICM      AND EXPAND D'0' OR E'0'            GP99181
+         SPACE 1                                                GP99169
+GENDCI2  CH    R9,=H'2'      STANDARD HALF-WORD?                GP99170
+         BL    GENDCIMV      NO                                 GP99170
+         BH    GENDSHEX      HUH?                               GP99170
+         LH    R0,0(,R4)     GET DATA WITH SIGN EXTENSION       GP99170
+         ST    R0,WORKNBR    SET IT                             GP99170
+         B     GENDCICM      GO TO COMMON                       GP99170
+         SPACE 1                                                GP99169
+GENDCI4  CH    R9,=H'4'      STANDARD FULL-WORD?                GP99170
+         BH    GENDSHEX      HUH?                               GP99170
+GENDCIMV XC    WORKNBR,WORKNBR  MAKE LEADING ZEROES             GP99170
+         LA    R14,WORKNBR+L'WORKNBR                            GP99170
+         SR    R14,R9        START MOVE ADDRESS                 GP99170
+         LR    R15,R9                                           GP99170
+         BCTR  R15,0         MAKE HEX                           GP99170
+         EX    R15,EXMVCINT                                     GP99170
+GENDCICM STH   R9,OPLENGTH   SAVE INSTRUCTION LENGTH            GP99170
+         BAL   R9,GEN0600    PREPARE BASIC DC CARD              GP99170
+         LH    R9,OPLENGTH   RESTORE                            GP99170
+         MVC   SRCOPER(4),=C'AL0('                              GP99170
+         CLI   DATAASMT,C'A' WAS IT ABSOLUTE ADCON ?            GP99170
+         BE    GENDCICN                                         GP99170
+         MVC   SRCOPER(1),DATAASMT  MOVE TYPE                   GP99170
+         MVI   SRCOPER+3,C''''  MAKE OTHER FRAME                GP99170
+GENDCICN MVN   SRCOPER+2(1),DATAILEN+L'DATAILEN-1 EXPLICIT LEN  GP99170
+         LA    R0,ALIGNCNT   NUMBER OF TYPE ENTRIES             GP99181
+         LA    R14,ALIGNTAB  FIRST ONE                          GP99181
+GENDCITL CLC   SRCOPER(1),0(R14)  TYPE MATCH?                   GP99181
+         BNE   GENDCITU      NO                                 GP99181
+         CLC   SRCOPER+2(1),1(R14)  LENGTH MISMATCH?            GP99181
+         BNE   GENDCITN      YES; RETAIN LENGTH                 GP99181
+         EX    R4,EXTMODD    SEE WHETHER ALIGNED                GP99181
+         BNZ   GENDCITN      NO; EXPLICIT LENGTH                GP99181
+         MVC   SRCOPER+1(3),SRCOPER+3  COLLAPSE                 GP99181
+         LA    R14,SRCOPER+2  SET NEXT INSERTION                GP99181
+         B     GENDCITO      PROCEED                            GP99181
+GENDCITU LA    R14,3(,R14)   NEXT TABLE ENTRY                   GP99181
+         BCT   R0,GENDCITL   TRY IT; ELSE SHOW LENGTH           GP99181
+GENDCITN LA    R14,SRCOPER+4                                    GP99170
+GENDCITO TM    WORKNBR,X'80'  NEGATIVE?                         GP99170
+         BZ    GENDCICP      NO                                 GP99170
+         CLI   DATAASMT,C'A'  ADCON?                            GP99170
+         BNE   GENDCICO      NO                                 GP99170
+         MVI   0(R14),C'0'   FOR OLDER ASSEMBLERS               GP99170
+         LA    R14,1(,R14)                                      GP99170
+GENDCICO MVI   0(R14),C'-'   NEGATE                             GP99170
+         LA    R14,1(,R14)                                      GP99170
+         XC    WORKNBR,=X'FFFFFFFF'  FLIP                       GP99170
+GENDCICP ST    R14,GENADDR   SET INSERTION POINT                GP99170
+         BAL   R15,GENNBR00  MAKE AN INTEGER                    GP99170
+         CLI   DATAASMT,C'A'  ADCON?                            GP99170
+         BNE   GENDCICQ      NO                                 GP99170
+         BAL   R15,GENPRN2   AND CLOSING PARENTHESIS            GP99170
+         B     GEN0570       AND BUMP                           GP99170
+GENDCICQ L     R14,GENADDR                                      GP99170
+         MVI   0(R14),C''''  MAKE TRAILING QUOTE                GP99170
+         B     GEN0570       AND BUMP                           GP99170
+         SPACE 1                                                GP99169
+GENDCNTS CH    R9,=H'256'    NOT TOO LONG ?                     GP09185
+         BNH   *+8           OK                                 GP09185
+         LH    R9,=H'256'    USE MAX                            GP09185
+         LR    R15,R9        COPY LENGTH                        GP09185
+         BCTR  R15,0           FOR EXECUTE                      GP09185
+         EX    R15,EXTSTZER  ALL ZERO?                          GP09185
+         BZ    GENDCHX0      YES; DON'T TRUNCATE                GP09185
+         CH    R9,=H'26'     MAX LENGTH-1 OF DC X'XXXXX'        GP09185
+         BNH   *+8                                              GP99161
+         LA    R9,26         TRUNCATE TO MAX ON ONE CARD        GP99161
+         B     GENDCHEX      GO TO HEXADECIMAL GENERATION       GP99169
+         SPACE 1                                                GP99169
+*  AT THIS POINT LOOK FOR:                                      GP99169
+*   0-N  PRINTABLES - IF N>2 DO AS N CHARACTER CHUNK            GP99169
+*   IF 0-2 PRINTABLES, FIND FIRST UNPRINTABLE                   GP99169
+*     FIND NEXT PRINTABLE; IF FOUND, MUST BE AT LEAST 3, ELSE DO HEX
+*  NOTE: R4 POINTS TO DATA, AND R3-R13 ARE IN USE               GP99169
+GENDCANY CH    R9,=H'256'    MAX LENGTH OF TRT                  GP99170
+         BNH   *+8                                              GP99170
+         LA    R9,256        TRUNCATE TO MAX                    GP99170
+         LA    R1,1(R9,R4)   SET STOPPER                        GP99170
+         LR    R15,R9        MAINTAIN RESIDUAL LENGTH           GP99170
+         BCTR  R15,0         SET RESIDUAL LENGTH                GP99170
+         EX    R15,PRTTRT    SCAN CONSECUTIVE PRINTABLES        GP99170
+         BZ    GENDCCHR      ALL                                GP09185
+         SR    R1,R4         NUMBER OF PRINTABLES               GP99170
+         CH    R1,=H'3'      AT LEAST THREE?                    GP99170
+         BNL   GENDSCH1      YES; DO AS PRINTABLES W/ TRUNC     GP99170
+         SR    R15,R1        ARE ALL OF THEM PRINTABLE?         GP99170
+         BM    GENDSCH1      YES; DO CHARACTER MODE             GP99170
+         LA    R14,0(R1,R4)  SET START OF NON-CHAR TEST         GP99170
+         SPACE 1                                                GP99170
+*  RECURSIVE SEARCH FOR NON-PRINT/PRINTABLES. STOP WHEN >2 PRINTABLES
+*   R14 - FIRST NON-CHAR CHUNK (UP TO 2 LEADING CHARS)          GP99169
+*   R15 - RESIDUAL LENGTH - 1                                   GP99169
+*   R1  - FIRST CHAR CHUNK, IF ANY                              GP99169
+GENDCALP LA    R1,0(R9,R4)   SET SCAN STOPPER                   GP99170
+         EX    R15,EXNPR14   HOW MANY NON-PRINTABLES?           GP99170
+         BZ    GENDSHEX      ALL                                GP99170
+         AR    R15,R14       ADD PRIOR START                    GP99170
+         SR    R15,R1        NEW RESIDUAL LENGTH                GP99170
+         BM    GENDSHEX      ALL HEX                            GP99170
+         LR    R14,R1        SET NEXT SCAN START                GP99170
+         LA    R1,0(R9,R4)   SET SCAN STOPPER                   GP99170
+         EX    R15,EXPRT14   SCAN CONSECUTIVE PRINTABLES        GP99170
+         LR    R0,R1         COPY STOP                          GP99170
+         SR    R0,R14        PRINTABLE LENGTH                   GP99170
+         CH    R0,=H'3'      AT LEAST THREE ?                   GP99170
+         BNL   GENDSHEE      YES; STOP PRIOR TO R14             GP99170
+         LR    R14,R1        NEW SCAN START                     GP99170
+         SR    R15,R0        NEW RESIDUAL LENGTH                GP99170
+         BNM   GENDCALP      PRT AS HEX; LOOK FOR MORE          GP99170
+         SPACE 1                                                GP99169
+GENDSHEE LR    R9,R14                                           GP99170
+         SR    R9,R4         LENGTH TO PROCESS IN HEX           GP99170
+GENDSHEX CH    R9,=H'256'    NOT TOO LONG ?                     GP09185
+         BNH   *+8           OK                                 GP09185
+         LH    R9,=H'256'    USE MAX                            GP09185
+         LR    R15,R9        COPY LENGTH                        GP09185
+         BCTR  R15,0           FOR EXECUTE                      GP09185
+         EX    R15,EXTSTZER  ALL ZERO?                          GP09185
+         BZ    GENDCHX0      YES; USE SHORT FORM                GP09185
+         CH    R9,=H'8'      TOO LONG ?                         GP99169
+         BNH   GENDCHEX                                         GP99169
+         LA    R9,8          SET TO MAX WANTED                  GP99169
+GENDCHEX CH    R9,=H'9'      AT LEAST TEN ?                     GP09185
+         BNH   GENDCHEY      NO; USE OLD CODE                   GP09185
+         CH    R9,=H'256'    NOT TOO LONG ?                     GP09185
+         BNH   *+8           OK                                 GP09185
+         LH    R9,=H'256'    USE MAX                            GP09185
+         LR    R15,R9        COPY LENGTH                        GP09185
+         BCTR  R15,0           FOR EXECUTE                      GP09185
+         EX    R15,EXTSTZER  ALL ZERO?                          GP09185
+         BNZ   GENDCHEY      NO; DON'T TRUNCATE                 GP09185
+GENDCHX0 CH    R9,=H'8'      NOT TOO SHORT?                     GP09185
+         BNH   GENDCHEY      DO THE OLD WAY                     GP09185
+         ITRACE ID=DCXL00,RDATA1=R9    TRACK                    GP09185
+         STH   R9,OPLENGTH           SET LOGICAL LENGTH         GP09185
+         BAL   R9,GEN0600            GENERATE OBJECT AND 'DC'   GP09185
+         MVC   SRCOPER(8),=C'XLnnn''0'''  MAKE OPERAND          GP09185
+         LH    R9,OPLENGTH   GET LOGICAL LENGTH BACK            GP09185
+         CVD   R9,COMMDWRD   MAKE PACKED                        GP09185
+         MVC   DISPWORK(4),=X'F0202120'     EDIT MASK           GP09185
+         ED    DISPWORK(4),COMMDWRD+6       MAKE PRINTABLE      GP09185
+         MVC   SRCOPER+2(3),DISPWORK+1      COMPLETE LENGTH     GP09185
+         CLI   SRCOPER+2,C'0'        TWO DIGIT LENGTH ?         GP09185
+         BNE   GEN0570               NO; RETAIN                 GP09185
+         MVC   SRCOPER+2(06),SRCOPER+3  SWALLOW LEADING ZERO    GP10015
+         B     GEN0570                                          GP09185
+GENDCHEY ITRACE ID=DCLEN2,           LENGTH OF HEX DATA                +
+               RDATA1=R9
+         STH   R9,OPLENGTH           SET LENGTH IN DC ENTRY
+         BAL   R9,GEN0600            GENERATE OBJECT AND MNEMONIC
+         MVC   SRCOPER(2),HEXDC      SET OPERAND TO X'
+         LA    R1,SRCOPER+2          STARTING DATA POINT
+         LH    R15,OPLENGTH          DATA LENGTH
+         BCTR  R15,0         ADJUST FOR EXECUTE                 GP99169
+         EX    R15,EXMVCLNG  MOVE TEXT TO LONG WORK AREA        GP99169
+         LA    R15,1(,R15)                                      GP99169
+         LA    R14,DISPLONG  POINT TO INPUT                     GP99169
+GEN0430  LA    R2,7          MAX CHUNK SIZE                     GP99169
+         CR    R15,R2        MORE THAN ONE CHUNK?               GP99169
+         BNL   GEN0432       NO                                 GP99169
+         LR    R2,R15        GET LENGTH                         GP99169
+GEN0432  MH    R2,=H'33'     *2 IN HIGH NYBBLE AND *1 IN LOW    GP99169
+         EX    R2,EXUNPLNG   UNPACK TO OUTPUT LINE              GP99169
+         SRL   R2,4          MAKE TR LENGTH                     GP99169
+         EX    R2,EXTRLNG    MAKE READABLE                      GP99169
+         AR    R1,R2         ADVANCE OUTPUT                     GP99169
+         SRL   R2,1                                             GP99169
+         AR    R14,R2        ADVANCE INPUT                      GP99169
+         SR    R15,R2        NEED ANOTHER?                      GP99169
+         BP    GEN0430       DO ANOTHER                         GP99169
+         MVI   0(R1),C''''           INSERT ENDING APOSTROPHE   GP99169
+         B     GEN0570       ADVANCE; PRINT/PUNCH
+         SPACE 1                                                GP99183
+***********************************************************************
+**                                                                   **
+**  FOR PACKED DECIMAL, PERFORM VALIDITY CHECK. MAKE SURE LENGTH     **
+**   MATCHES, OTHERWISE DO AS HEX                                    **
+**                                                                   **
+***********************************************************************
+         SPACE 1                                                GP99183
+GENDCP   CH    R9,=H'16'     IS USER'S LENGTH VALID?            GP99183
+         BH    GENDSHEX      NO; FORMAT HEX                     GP99183
+         LR    R15,R9                                           GP99183
+         BCTR  R15,0         MAKE EXECUTE LENGTH                GP99183
+         EX    R15,EXTRTPAK  SEE WHETHER PACKED                 GP99183
+         BZ    GENDSHEX      ALL DIGITS - INVALID               GP99183
+         SR    R1,R4         GET LENGTH                         GP99183
+         CR    R1,R15        MATCHES EXPECTED LENGTH?           GP99183
+         BNE   GENDSHEX                                         GP99183
+         CLM   R2,1,PACKTBL+X'0D' VALID DIGIT/SIGN TERMINATION? GP99183
+         BH    GENDSHEX      TOO BAD                            GP99183
+         STH   R9,OPLENGTH   SAVE LENGTH OVER CALL              GP99183
+         BAL   R9,GEN0600    PREPARE BASIC DC CARD              GP99183
+         LH    R15,OPLENGTH                                     GP99183
+         BCTR  R15,0         REGAIN EXECUTE LENGTH              GP99183
+         MVC   SRCOPER(3),=C'P''-'                              GP99183
+         LR    R14,R4        GET FROM ADDRESS                   GP99183
+         LA    R1,SRCOPER+3   POINT TO NEGATIVE INSERTION       GP99183
+         CLM   R2,1,PACKTBL+X'0D' PLUS OR MINUS SIGN?           GP99183
+         BE    GENDCP0       MINUS; RETAIN                      GP99183
+         BCTR  R1,0          NO MINUS SIGN                      GP99183
+GENDCP0  CH    R15,=H'6'     TWO CHUNKS?                        GP99183
+         BNH   GENDCP1       NO; JUST ONE                       GP99183
+         UNPK  0(13,R1),0(7,R14) UNPACK FIRST DOUBLE WORD       GP99183
+         LA    R14,6(,R14)   BUMP FROM                          GP99183
+         LA    R1,12(,R1)    BUMP TOO                           GP99183
+         SH    R15,=H'6'     ADJUST EX LENGTH                   GP99183
+         B     GENDCP0                                          GP99183
+GENDCP1  MH    R15,=H'33'    MAKE EXECUTE MASK                  GP99183
+         EX    R15,EXUNPLNG  UNPACK                             GP99183
+         TRT   SRCOPER+3(40),BLKTRT  GET NEXT BLANK             GP99183
+         BCTR  R1,0          SPACE TO LAST DIGIT                GP99183
+         OC    0(2,R1),=C'0'''  MAKE CLOSER                     GP99183
+         B     GEN0570       PRINT THIS LINE                    GP99183
+EXMVCINT MVC   0(0,R14),0(R4)  MOVE INTEGER DATA                GP99170
+EXNPR14  TRT   0(0,R14),COMMNPRT  SCAN NON-PRINTABLES           GP99170
+EXPRT14  TRT   0(0,R14),COMMPRT   SCAN PRINTABLES               GP99170
+EXTRTPAK TRT   0(0,R4),PACKTBL   VERIFY PACKED FORMAT           GP99183
+EXMVCLNG MVC   DISPLONG(0),0(R4)  COPY USER'S TEXT              GP99169
+EXUNPLNG UNPK  0(0,R1),0(0,R14)  UNPACK TO OUTPUT FROM LONG     GP99169
+EXTRLNG  TR    0(0,R1),COMMHXTR  MAKE READABLE                  GP99169
+EXTSTZER OC    0(0,R4),0(R4)  TEST STORAGE FOR HEX ZEROS        GP99181
+EXTMODD  TM    2(R14),*-*     TEST FOR NON-ZERO BITS IN ADDRESS GP99181
+         SPACE 1                                                GP99169
+GENDSCH1 LR    R9,R1         COPY LENGTH                        GP99169
+GENDCCHR CH    R9,=H'133'    SET LOGICAL MAX ON ONE CARD        GP09185
+         BNH   GENDCCHS      WILL PASS                          GP09185
+         LA    R9,133        ARBITRARY LOGICAL MAX              GP09185
+GENDCCHS CH    R9,=H'9'      AT LEAST TEN ?                     GP09185
+         BNH   GENDCCHY      NO; USE OLD CODE                   GP09185
+         LR    R15,R9        DITTO                              GP09185
+         LA    R14,0(R9,R4)  LAST DATA BYTE + 1                 GP09185
+GENDCCLP BCTR  R14,0         BACK UP                            GP09185
+         CLI   0(R14),C' '   TRAILING BLANK?                    GP09185
+         BNE   GENDCCLB      NO                                 GP09185
+         BCT   R15,GENDCCLP   TRY AGAIN                         GP09185
+         LA    R15,1          AT LEAST ONE                      GP09185
+GENDCCLB CH    R15,=H'49'     SHORT ENOUGH FOR CLnnn'text' ?    GP09185
+         BH    GENDCCHY      NO; USE LONG FORM                  GP09185
+         CR    R15,R9        ANY TRAILING BLANKS DETECTED ?     GP09185
+         BE    GENDCCHY      NO; USE LONG FORM                  GP09185
+         ITRACE ID=CHARDL,RDATA1=R9    TRACK                    GP09185
+         STH   R9,OPLENGTH           SET LOGICAL LENGTH         GP09185
+         BAL   R9,GEN0600            GENERATE OBJECT AND 'DC'   GP09185
+         MVC   SRCOPER(6),=C'CLnnn'''  SET OPERAND TO CLnnn     GP09185
+         EX    R15,CHDCLMVC          MOVE CHARACTER DATA        GP09185
+         LA    R1,SRCOPER+6(R15)     ENDING POINT               GP09185
+         MVI   0(R1),C''''           INSERT ENDING APOSTROPHE   GP09185
+         LH    R9,OPLENGTH   GET LOGICAL LENGTH BACK            GP09185
+         CVD   R9,COMMDWRD   MAKE PACKED                        GP09185
+         MVC   DISPWORK(4),=X'F0202120'     EDIT MASK           GP09185
+         ED    DISPWORK(4),COMMDWRD+6       MAKE PRINTABLE      GP09185
+         MVC   SRCOPER+2(3),DISPWORK+1      COMPLETE LENGTH     GP09185
+         CLI   SRCOPER+2,C'0'        TWO DIGIT LENGTH ?         GP09185
+         BNE   GEN0570               NO; RETAIN                 GP09185
+         MVC   SRCOPER+2(54),SRCOPER+3  SWALLOW LEADING ZERO    GP09185
+         B     GEN0570                                          GP09185
+CHDCLMVC MVC   SRCOPER+6(0),0(R4)    COPY CHARACTER DATA        GP09185
+         SPACE 1
+GENDCCHY CH    R9,=H'52'     SET PHYSICAL MAX ON ONE CARD       GP09185
+         BNH   GENDCCHZ      WILL PASS                          GP09185
+         LA    R9,48         ELSE TRUNCATE (AND MAKE NEXT CHUNK CHAR)
+GENDCCHZ ITRACE ID=CHARDC,RDATA1=R9                             GP99169
+*SHOULD  LR    R15,R9                COPY LENGTH                GP99169
+*NOT     BCTR  R15,0                 MINUS 1                    GP99169
+*NEED    EX    R15,PRTTRT            SCAN FOR ALL PRINTABLE     GP99169
+*TO      BZ    GEN0450               ALL PRINTABLE              GP99169
+*DO      LR    R9,R1                 COPY STOPPING POINT        GP99169
+*THIS    SR    R9,R4                 NUMBER OF BYTES SCANNED    GP99169
+         LR    R15,R9                COPY LENGTH
+         BCTR  R15,0                 MINUS 1
+GEN0450  DS    0H
+         ITRACE ID=DCLEN3,           TO END OF DATA OR HEX DATA        +
+               RDATA1=R9,                                              +
+               RDATA2=R15
+         STH   R9,OPLENGTH           SET LENGTH
+         BAL   R9,GEN0600            GENERATE OBJECT AND MNEMONIC
+         MVC   SRCOPER(2),CHARDC     SET OPERAND TO C'
+         EX    R15,CHDCMVC           MOVE CHARACTER DATA
+         LA    R1,SRCOPER+3(R15)     ENDING POINT
+         MVI   0(R1),C''''           INSERT ENDING APOSTROPHE
+         B     GEN0570
+         SPACE 1
+*---------------------------------------------------------------------*
+*   WHEN THERE ARE MULTIPLE CSECTS, THE ADDRESS OF THE CURRENT CSECT  *
+*   MUST BE REMOVED FROM THE ADCON VALUE                              *
+*---------------------------------------------------------------------*
+GEN0458  LA    R15,LENMASK-1  ICM MASKS BY LENGTH               GP05212
+         A     R15,DATALEN   GET MASK ADDRESS FOR LENGTH        GP05212
+         IC    R14,0(,R15)   LOAD MASK                          GP05212
+         SR    R15,R15       CLEAR FOR ICM < 4 BYTES            GP05212
+         EX    R14,EXLOAD    GET VALUE                          GP05212
+*TEST*   SL    R15,COMMCSAD  LESS CSECT START                   GP05212
+         SL    R15,DATABASE  SUBTRACT BASE ENTRY ADDRESS        GP10069
+         ST    R15,DATALBD   SAVE DISPLACEMENT                  GP10071
+         EX    R14,EXSTOR    RETURN CORRECTED VALUE             GP05212
+         B     GEN0460       SKIP EX                            GP05212
+EXLOAD   ICM   R15,0,0(R4)   LOAD VALUE TO BE FIXED             GP05212
+EXSTOR   STCM  R15,0,0(R4)   REPLACE VALUE                      GP05212
+LENMASK  DC    X'0103070F'   ICM MASKS BY LENGTH 1-4            GP05212
+         SPACE 1
+*---------------------------------------------------------------------*
+*   PROCESS REGULAR ADCON                                             *
+*---------------------------------------------------------------------*
+GEN0460  DS    0H
+         ITRACE ID=GENADCON          GENERATING AN ADCON
+         MVC   OPLENGTH,DATALEN+2    SET LENGTH
+         BAL   R9,GEN0600            GENERATE OBJECT AND MNEMONIC
+         MVC   SRCOPER(4),=C'AL0('   SET ADCON-LENGTH           GP99142
+         MVN   SRCOPER+2(1),DATALEN+3                           GP99142
+         CLI   DATATYPE,$DATAARL  RELOCATABLE ?                 GP10069
+         BNE   GENACON       NO                                 GP10069
+         MVC   SRCOPER+4(8),DATANAME   SHOW EXTERNAL NAME       GP10069
+         CLI   DATANAME,C' '      ANY ?                         GP10069
+         BH    GENAEXT            YES; USE IT                   GP10069
+GENACON  L     R2,DATALBA    LABEL BLOCK'S ADDRESS              GP99161
+         MVC   SRCOPER+4(8),LABLNAME-LABLDSCT(R2)               GP99184
+         BAL   R14,REFLABEL  ADD TO CROSS REFERENCE             GP99184
+GENAEXT  LA    R14,ALIGNDC4                                     GP99181
+         EX    R4,EXTMODD    IS IT ALIGNED?                     GP99181
+         BNZ   GEN0478       NO                                 GP99181
+         CLI   SRCOPER+2,C'4'  EXPECTED LENGTH ?                GP99181
+         BNE   GEN0478       NO; EXPLICIT LENGTH                GP99181
+         MVC   SRCOPER+1(2+8+1),SRCOPER+3  SLIDE ALL LEFT       GP99181
+GEN0478  TRT   SRCOPER+2(12),BLKTRT   FIND NEXT BLANK           GP99181
+GEN0480  CLI   DATALEN+3,4   IS IT A FOUR-BYTE AD-CON?          GP99142
+         BNE   GEN0485       NO                                 GP99142
+         TM    0(R4),X'80'   HIGH BIT ON?                       GP99142
+         BZ    GEN0485                                          GP99142
+         MVC   0(12,R1),=C'+X''80000000'''  SET BIT             GP99142
+         LA    R1,12(,R1)    ADJUST OUTPUT ADDRESS              GP99142
+GEN0485  ST    R1,GENADDR            SET CURRENT ADDRESS        GP99142
+         ICM   R0,15,DATALBD         DISPLACEMENT FROM LABEL
+         BZ    GEN0490               NO DISPLACEMENT
+         MVI   0(R1),C'+'            INSERT PLUS SIGN
+         LA    R1,1(,R1)             NEXT
+         ST    R1,GENADDR            SAVE ADDRESS
+         ST    R0,WORKNBR    SET DISPLACEMENT                   GP99161
+         BAL   R15,GENNBR00          GENERATE DISPLACEMENT      GP99146
+GEN0490  DS    0H
+         BAL   R15,GENPRN2           GENERATE CLOSING PARENTHESIS
+         B     GEN0570               DONE
+GEN0500  DS    0H
+         ITRACE ID=GENVCON
+         MVC   OPLENGTH,DATALEN+2    SET LENGTH
+         BAL   R9,GEN0600            GENERATE OBJECT AND MNEMONIC
+         MVC   SRCOPER(4),=C'VL0('   SET VCON-LENGTH            GP99142
+         MVN   SRCOPER+2(1),DATALEN+3                           GP99142
+         MVC   SRCOPER+4(8),DATANAME COPY EXTERNAL SYMBOL NAME
+         LA    R1,DATANAME                                      GP99184
+         BAL   R14,FINDLABL  NO MATCH?                          GP99184
+         LA    R14,ALIGNDC4                                     GP99181
+         EX    R4,EXTMODD    IS IT ALIGNED?                     GP99181
+         BNZ   GEN0528       NO                                 GP99181
+         CLI   SRCOPER+2,C'4'  EXPECTED LENGTH ?                GP99181
+         BNE   GEN0528       NO; EXPLICIT LENGTH                GP99181
+         MVC   SRCOPER+1(2+8+1),SRCOPER+3  SLIDE ALL LEFT       GP99181
+GEN0528  TRT   SRCOPER+2(12),BLKTRT   FIND NEXT BLANK           GP99181
+         MVI   0(R1),C')'            CLOSING PARENTHESIS
+         ICM   R15,15,DATALEN   LOAD LENGTH                     GP10046
+         BNP   GEN0570       HUH?                               GP10046
+         SLL   R15,1         DOUBLE                             GP10057
+         BCTR  R15,0         EXECUTE LENGTH                     GP10057
+         EX    R15,EXCLRSRC  CLEAR VALUE IN OBJECT FIELD        GP10057
+         B     GEN0570                                          GP10057
+EXCLRSRC MVC   SRCOBJ1(0),=16C'0'  CLEAR V-CON ADDRESS          GP10066
+         SPACE 1
+GEN0530  MVC   OPLENGTH,DATALEN+2    SET LENGTH
+         BAL   R9,GEN0600            GENERATE OBJECT AND MNEMONIC
+         MVC   SRCMNEM,CXDOPCD       CHANGE OPCODE TO CXD
+         B     GEN0570
+*---------------------------------------------------------------------*
+*    GENERATE FILLER SPACE (ORIGINAL DC OR ORG OR OTHER SPACER        *
+*---------------------------------------------------------------------*
+GENDSLEN CH    R9,=H'256'    MAX                                GP10033
+         BNH   *+8           OK                                 GP10033
+         LA    R9,256        TRUNCATE                           GP10033
+         ITRACE ID=DSLEN,RDATA1=R9     TRACK                    GP10033
+         STH   R9,OPLENGTH           SET LOGICAL LENGTH         GP10033
+         BAL   R9,GEN0600            GENERATE OBJECT AND 'DC'   GP10033
+         MVI   SRCMNEM+1,C'S'     CHANGE DC TO DS               GP10066
+         MVC   SRCOPER(8),=C'XLnnn''0'''  MAKE OPERAND          GP10033
+         MVC   SRCCMNT(6),=C'FILLER'   IDENTIFY                 GP10033
+         LH    R9,OPLENGTH   GET LOGICAL LENGTH BACK            GP10033
+         LA    R15,8         MAX PACKED                         GP10066
+         CR    R9,R15        LONGER THAN MAX ?                  GP10066
+         BNL   *+6           YES                                GP10066
+         LR    R15,R9        USE SHORTER LENGTH                 GP10066
+         SLL   R15,1         DOUBLE                             GP10066
+         BCTR  R15,0         EXECUTE LENGTH                     GP10066
+         EX    R15,EXCLRSRC  CLEAR VALUE IN OBJECT FIELD        GP10066
+         CVD   R9,COMMDWRD   MAKE PACKED                        GP10033
+         MVC   DISPWORK(4),=X'F0202120'     EDIT MASK           GP10033
+         ED    DISPWORK(4),COMMDWRD+6       MAKE PRINTABLE      GP10033
+         MVC   SRCOPER+2(3),DISPWORK+1      COMPLETE LENGTH     GP10033
+         CLI   SRCOPER+2,C'0'        TWO DIGIT LENGTH ?         GP10033
+         BNE   GEN0570               NO; RETAIN                 GP10033
+         MVC   SRCOPER+2(06),SRCOPER+3  SWALLOW LEADING ZERO    GP10033
+         B     GEN0570                                          GP10033
+GEN0540  DS    0H
+         ITRACE ID=GENQ
+         MVC   OPLENGTH,DATALEN+2    SET LENGTH
+         BAL   R9,GEN0600            GENERATE OBJECT AND MNEMONIC
+         MVC   SRCOPER(4),=C'QL0('   SET Q-LENGTH               GP99142
+         MVN   SRCOPER+2(1),DATALEN+3                           GP99142
+         MVC   SRCOPER+4(8),DATANAME COPY EXTERNAL SYMBOL NAME
+         LA    R1,DATANAME                                      GP99184
+         BAL   R14,FINDLABL  NO MATCH?                          GP99184
+         LA    R14,ALIGNDC4                                     GP99181
+         EX    R4,EXTMODD    IS IT ALIGNED?                     GP99181
+         BNZ   GEN0568       NO                                 GP99181
+         CLI   SRCOPER+2,C'4'  EXPECTED LENGTH ?                GP99181
+         BNE   GEN0568       NO; EXPLICIT LENGTH                GP99181
+         MVC   SRCOPER+1(2+8+1),SRCOPER+3  SLIDE ALL LEFT       GP99181
+GEN0568  TRT   SRCOPER+2(12),BLKTRT   FIND NEXT BLANK           GP99181
+         MVI   0(R1),C')'            CLOSING PARENTHESIS
+GEN0570  DS    0H
+         AH    R3,OPLENGTH           UPDATE DISPLACEMENT
+         AH    R4,OPLENGTH           NEXT OBJECT MODULE BYTE
+GEN0580  DS    0H
+         MVC   SRCLABL,LOCLABEL  PLACE LABEL ON OUTPUT          GP99146
+         MVC   LOCLABEL,LOCLABEL-1   AND CLEAR FOR NEXT USE     GP99146
+         MVC   PRTDATA(SRCL),SRC     SET DATA FOR PRINTING
+         BAL   R9,PUNCH000           PUNCH                      GP99134
+         BAL   R9,PRTSTMT            PRINT RLD DETECTED DATA    GP99134
+         ST    R3,DISPI      SET NEW DISPLACEMENT               GP99161
+         ST    R3,DISPD      SET DATA DISPLACEMENT              GP99161
+         ITRACE ID=DCDONE,           DC PROCESSING COMPLETE            +
+               DATA1=DISPD,          .. DATA DISPLACEMENT NOW          +
+               DATA2=DATAEND         .. END OF DATA AREA
+         CLC   DISPD,DATAEND         BEYOND END OF DATA AREA?
+         BNH   GENLOOP               NO                         GP99155
+         ITRACE ID=NEXTDATA,                                           +
+               RDATA1=R7,            .. CURRENT DATA BLOCK ADDRESS     +
+               DATA2=DATANEXT        .. NEXT DATA BLOCK'S ADDRESS
+         ICM   R7,15,DATANEXT        NEXT DATA BLOCK
+         BNZ   GEN0590               SET NEXT DATA DISP
+         MVI   DISPD,X'FF'           SET END OF FILE
+         B     GENLOOP                                          GP99155
+GEN0590  DS    0H
+         MVC   DISPD,DATABEGN        SET BEGINNING OF NEXT DATA AREA
+         B     GENLOOP                                          GP99155
+* ------------------------------------------------------------------- *
+*        Generate displacement, mnemonic, and instruction in hex      *
+* ------------------------------------------------------------------- *
+GEN0600  DS    0H
+         MVC   SRC(SRCL),SRC-1       CLEAR SOURCE STATEMENT
+         UNPK  SRCDISP(9),DISPI(5)   UNPACK DISPLACEMENT
+         TR    SRCDISP,COMMHXTR      TRANSLATE TO PRINTABLE     GP99132
+         MVI   SRCDISP+8,C' '        RESTORE BLANK
+         MVC   SRCMNEM,OPMNEM        SET MNEMONIC
+         LH    R1,OPLENGTH           INSERT INSTRUCTION LENGTH
+         CH    R1,=H'8'      NOT TOO LONG?                      GP99161
+         BNH   *+8                                              GP99161
+         LA    R1,8          ELSE TRUNCATE                      GP99161
+         LA    R14,0(R1,R1)  SAVE TRUNCATED LENGTH              GP10018
+         BCTR  R1,0                  ADJUST FOR EXECUTE
+         EX    R1,OBJMVC1            COPY FOR UNPACKING
+         UNPK  OBJOUT(9),OBJIN(5)    UNPACK FIRST WORD          GP99141
+         UNPK  OBJOUT+8(9),OBJIN+4(5)  UNPACK SECOND WORD       GP99141
+         TR    OBJOUT,COMMHXTR       TRANSLATE TO PRINTABLE     GP99132
+         MVI   OBJOUT+16,C' '        BLANK                      GP99141
+         MH    R1,=AL2(TRMSK2-TRMSK1)    MAKE MASK              GP99141
+         LA    R1,TRMSK1(R1)         POINT TO MASK              GP99141
+         MVC   SRCOBJ1(TRMSK2-TRMSK1),0(R1)    MOVE MASK        GP99141
+         CLC   =C'DC ',SRCMNEM    CONSTANT?                     GP10018
+         BNE   GEN0650       NO                                 GP10018
+         MVI   SRCOBJ1,X'10'   PRESET FOR BLANK                 GP10018
+         MVC   SRCOBJ1+1(18),SRCOBJ1   MAKE ALL BLANK           GP10018
+         BCTR  R14,0         ADJUST FOR EXECUTE                 GP10018
+         EX    R14,EXMVCMSK  AND MOVE AS NEEDED                 GP10018
+GEN0650  TR    SRCOBJ1(TRMSK2-TRMSK1),OBJOUT    FORMAT OUTPUT   GP99141
+         LA    R1,SRCOPER            1ST OPERAND BYTE
+         ST    R1,GENADDR            SAVE CURRENT ADDRESS
+         BR    R9
+OBJMVC1  MVC   OBJIN(0),0(R4)        COPY DATA TO BE DISPLAYED
+EXMVCMSK MVC   SRCOBJ1(0),TRMSKDC    MOVE MASK                  GP10018
+* ------------------------------------------------------------------- *
+*        Copy assembler input statements                              *
+* ------------------------------------------------------------------- *
+GEN0700  DS    0H
+         MVC   SRC(SRCL),SRC-1       CLEAR SOURCE STATEMENT     GP99134
+         MVC   SRCMNEM(7),=C'SPACE 1'  PRETTIFY                 GP99134
+         BAL   R9,PUNCH000           PUNCH END STATEMENT        GP99134
+         BAL   R9,PRTUSER            PRINT SOURCE STATEMENT     GP99134
+         MVC   SRCMNEM(14),=C'PRINT ON,NOGEN'  PRETTIFY         GP99134
+         BAL   R9,PUNCH000           PUNCH END STATEMENT        GP99134
+         BAL   R9,PRTUSER            PRINT SOURCE STATEMENT     GP99134
+         TM    COMMFLAG,$ASMIN       ANY ASSEMBLER INPUT?
+         BNO   GEN0730               NO
+         ITRACE ID=ASMIN             COPYING ASSEMBLER INPUT
+         OPEN  (SYSIN,INPUT)         OPEN SYSIN
+GEN0710  DS    0H
+         GET   SYSIN                 READ A SYSIN STATEMENT
+         LR    R2,R1         COPY START ADDRESS                 GP99134
+         LA    R14,1         SET INCREMENT                      GP99134
+         LA    R15,16-5(,R2)   NOT TOO FAR                      GP99134
+         MVC   SRCLABL(80),0(R1)     COPY TO SOURCE STATEMENT AREA
+         CLC   =C'ASM START ',0(R2)  DISASM02'S START CARD?     GP99139
+         BE    GEN0710           YES; IGNORE                    GP99134
+GEN07LUP CLC   =C' END ',0(R2)   USER SUPPLIED END CARD?        GP99134
+         BE    GEN0710           YES; IGNORE                    GP99134
+         CLC   =C' YREGS ',0(R2)   USER SUPPLIED REG MAP?       GP99134
+         BE    GEN0710           YES; IGNORE                    GP99134
+         CLC   =C' PRINT ',0(R2)   USER SUPPLIED PRINT OPTIONS ?
+         BE    GEN0710           YES; IGNORE                    GP99134
+         BXLE  R2,R14,GEN07LUP   TRY NEXT COLUMN                GP99134
+         BAL   R9,PUNCH000           COPY TO PUNCH FILE         GP99146
+         BAL   R9,PRTUSER            PRINT SOURCE STATEMENT     GP99134
+         B     GEN0710               LOOP
+GEN0720  DS    0H
+         ITRACE ID=ASMINEND          END OF SYSIN REACHED
+         CLOSE SYSIN                 CLOSE SYSIN
+         B     GEN0800
+GEN0730  DS    0H
+         ITRACE ID=NOASMIN           NO ASSEMBLER INPUT TO COPY GP99134
+* ------------------------------------------------------------------- *
+*        Generate END statement                                       *
+* ------------------------------------------------------------------- *
+GEN0800  DS    0H
+         MVC   SRC(SRCL),SRC-1       CLEAR SOURCE STATEMENT     GP99134
+         MVC   SRCMNEM(7),=C'YREGS ,'  SET MACRO TO EXPAND MNEMONICS
+         BAL   R9,PUNCH000           PUNCH END STATEMENT        GP99134
+         BAL   R9,PRTUSER            PRINT SOURCE STATEMENT     GP99134
+         MVC   SRC(SRCL),SRC-1       CLEAR SOURCE STATEMENT
+         MVC   SRCMNEM,ENDOPCD       SET OPCODE 'END'
+         MVC   SRCOPER(L'COMMCSNM),COMMCSNM
+         LA    R1,COMMCSNM   ADD END STATEMENT TO XREF          GP99184
+         BAL   R14,FINDLABL                                     GP99184
+         BAL   R9,PUNCH000           PUNCH END STATEMENT        GP99146
+         BAL   R9,PRTUSER            PRINT SOURCE STATEMENT     GP99134
+         B     EXIT0000              ALL DONE
+*---------------------------------------------------------------------*
+*                                                                     *
+*              GENERATE E FORMAT - NO OPERAND FIELD                   *
+*                                                                     *
+*---------------------------------------------------------------------*
+GENE0000 DS    0H                                               GP99132
+         ITRACE ID=GENE              GENERATE SVC FORMAT INSTRUCTION
+         BAL   R15,GENCOMMA          INSERT COMMA (FOR COMMENT) GP99132
+         B     GEN0340               COMPLETE                   GP99132
+*---------------------------------------------------------------------*
+*                                                                     *
+*              Generate RR format 1 instructions                     *
+*                                                                     *
+*---------------------------------------------------------------------*
+GENRR100 DS    0H
+         ITRACE ID=GENRR1            GENERATE SVC FORMAT INSTRUCTION
+         PACK  WORKREG(1),1(1,R4)    FLIP REG #1 INTO LOW NYBBLE
+         BAL   R15,GENREG00          GENERATE R1                GP99146
+         BAL   R15,GENCOMMA          INSERT COMMA               GP99146
+         MVN   WORKREG,1(R4)         FLIP #1 AND #2             GP99132
+         BAL   R15,GENREG00          GENERATE R2                GP99146
+         B     GEN0340               COMPLETE
+         SPACE 2
+*---------------------------------------------------------------------*
+*                                                                     *
+*              Generate RR format 2 instructions                      *
+*                                                                     *
+*---------------------------------------------------------------------*
+GENRR200 DS    0H
+         ITRACE ID=GENRR2            GENERATE SVC FORMAT INSTRUCTION
+         XC    WORKNBR,WORKNBR       CLEAR NUMERIC
+         MVC   WORKNBR+3(1),1(R4)    COPY SVC NUMBER
+         BAL   R15,GENNBR00          GENERATE SVC NUMBER        GP99146
+         TM    OPFLAGS,$OPSVC        IS THIS AN SVC?
+         BNO   GEN0340               NOPE
+         SR    R15,R15       LENGTH WORK REGISTER               GP99134
+         IC    R0,1(,R4)     LOAD NUMBER TO BE FOUND            GP99134
+         L     R1,ASVCDESC           SVC DESCRIPTIONS
+         USING SVCDSECT,R1           DEFINE BASE
+GENRR210 DS    0H
+         ICM   R15,1,SVCLEN  GET TEXT LENGTH - 1                GP99134
+         BM    GEN0340       END OF TABLE - SKIP COMMENT        GP99134
+         CLM   R0,1,SVCNBR   SVC NUMBER LOCATED?                GP99134
+         BE    GENRR220              YES
+         LA    R1,SVCSIZE+1(R15,R1)  NEXT SVC                   GP99134
+         B     GENRR210              LOOP
+GENRR220 DS    0H
+*WASTED* MVC   SRCCMNT(25),COMMBLKS  INITIALIZE COMMENT         GP10034
+         EX    R15,SVCCMVC           MOVE SVC COMMENT
+         B     GEN0340               COMPLETE
+SVCCMVC  MVC   SRCCMNT(0),SVCCMNT    SET COMMENT                GP10034
+         SPACE 2
+*---------------------------------------------------------------------*
+*                                                                     *
+*              Generate RR branch instructions                        *
+*                                                                     *
+*---------------------------------------------------------------------*
+GENRR300 DS    0H
+         ITRACE ID=GENRRBR           GENERATE RR MASK TYPE INSTRUCTION
+         SR    R14,R14               CLEAR REGISTER
+         IC    R14,1(,R4)            INSERT MASK
+         SRL   R14,4                 SHIFT TO LOW BITS
+         XC    WORKNBR,WORKNBR       ZERO BYTE 1-3
+         STC   R14,WORKNBR+3         SET BYTE 4
+         TM    COMMOPFG,$OFBCOP   RAW BCR ?                     GP10029
+         BNZ   GENRR340           YES; EXPAND BCR ONLY          GP10029
+         TM    SAVEFLAG,$OPCCA       ARITHMETIC MNEMONICS?
+         BO    GENRR310              YES
+         TM    SAVEFLAG,$OPCCC       COMPARE MNEMONICS?
+         BO    GENRR320              YES
+         L     R1,=A(GENRRCCL)    LOGICAL EXTENDED MNEMONICS    GP10075
+         B     GENRR330
+GENRR310 DS    0H
+         L     R1,=A(GENRRCCA)    ARITHMETIC EXTENDED MNEMONICS GP10075
+         B     GENRR330
+GENRR320 DS    0H
+         L     R1,=A(GENRRCCC)    COMPARE EXTENDED MNEMONICS    GP10075
+GENRR330 DS    0H
+         CLI   0(R1),X'FF'           EXTENDED MNEMONIC NOT FOUND?
+         BE    GENRR340              NO
+         CLM   R14,1,0(R1)           MASK FOUND?
+         BE    GENRR350              YES
+         LA    R1,7(,R1)             NEXT MASK/EXTENDED MNEMONIC
+         B     GENRR330              LOOP
+GENRR340 DS    0H
+         BAL   R15,GENNBR00          GENERATE MASK VALUE        GP99146
+         BAL   R15,GENCOMMA          INSERT COMMA               GP99146
+         B     GENRR360              GENERATE OPERAND
+GENRR350 DS    0H
+         MVC   SRCMNEM,1(R1)         SET EXTENDED MNEMONIC
+GENRR360 DS    0H
+         MVN   WORKREG,1(R4)         COPY REGISTER              GP99132
+         BAL   R15,GENREG00          GENERATE REGISTER          GP99146
+         B     GEN0340               COMPLETE
+*---------------------------------------------------------------------*
+*                                                                     *
+*              GENERATE RR FORMAT 4 INSTRUCTIONS                      *
+*                                                                     *
+*---------------------------------------------------------------------*
+GENRR400 DS    0H                                               GP99132
+         ITRACE ID=GENRR4            GENERATE SVC FORMAT INSTRUCTION
+         PACK  WORKREG(1),1(1,R4)    FLIP REG #1 INTO LOW NYBBLE
+         BAL   R15,GENREG00          GENERATE R1                GP99132
+         B     GEN0340               COMPLETE                   GP99132
+*---------------------------------------------------------------------*
+*                                                                     *
+*              GENERATE RR FORMAT 5 INSTRUCTIONS                      *
+*                                                                     *
+*---------------------------------------------------------------------*
+GENRR500 DS    0H                                               GP99132
+         ITRACE ID=GENRR5            GENERATE SVC FORMAT INSTRUCTION
+         MVC   WORKREG,1(R4)         COPY R1 AND R2             GP99132
+         BAL   R15,GENREG00          GENERATE R2                GP99132
+         B     GEN0340               COMPLETE                   GP99132
+*---------------------------------------------------------------------*
+*                                                                     *
+*              GENERATE RRE FORMAT INSTRUCTIONS                       *
+*                                                                     *
+*---------------------------------------------------------------------*
+GENRRE00 DS    0H                                               GP99132
+         ITRACE ID=GENRRE            GENERATE SVC FORMAT INSTRUCTION
+         PACK  WORKREG(1),3(1,R4)    FLIP REG #3 INTO LOW NYBBLE
+         BAL   R15,GENREG00          GENERATE R1                GP99132
+         BAL   R15,GENCOMMA          INSERT COMMA               GP99132
+         MVN   WORKREG,3(R4)         COPY R1 AND R2             GP99132
+         BAL   R15,GENREG00          GENERATE R2                GP99132
+         B     GEN0340               COMPLETE                   GP99132
+*---------------------------------------------------------------------*
+*                                                                     *
+*              GENERATE RRE FORMAT INSTRUCTIONS - OPCODE ONLY         *
+*                                                                     *
+*---------------------------------------------------------------------*
+GENRREZ0 DS    0H                                               GP10018
+         ITRACE ID=GENRREZ           GENERATE RRE - NO REGS     GP10018
+         B     GEN0340               COMPLETE                   GP10018
+*---------------------------------------------------------------------*
+*                                                                     *
+*              GENERATE RRE FORMAT INSTRUCTIONS - R1 ONLY             *
+*                                                                     *
+*---------------------------------------------------------------------*
+GENRRE30 DS    0H                                               GP10018
+         ITRACE ID=GENRRE3           GENERATE SVC FORMAT INSTRUCTION
+         PACK  WORKREG(1),3(1,R4)    FLIP REG #3 INTO LOW NYBBLE
+         BAL   R15,GENREG00          GENERATE R1                GP10018
+         B     GEN0340               COMPLETE                   GP99132
+         SPACE 2
+*---------------------------------------------------------------------*
+*                                                                     *
+*              Generate RX format instructions                        *
+*                                                                     *
+*---------------------------------------------------------------------*
+GENRX00  DS    0H
+         ITRACE ID=GENRX             GENERATE RX FORMAT INSTRUCTION
+         TM    COMMOPFG,$OFBCOP   BC ONLY?                      GP10029
+         BNZ   GENRX05            YES; IGNORE EXTENDED MNEMONIC GP10029
+         TM    OPFLAGS,$OPEXT        EXTENDED FORMATS?
+         BO    GENB000               YES
+GENRX05  PACK  WORKREG(1),1(1,R4)    FLIP REG #1 INTO LOW NYBBLE
+         BAL   R15,GENREG00          GENERATE REGISTER          GP99146
+         BAL   R15,GENCOMMA          INSERT COMMA               GP99146
+         MVN   WORKX,1(R4)           COPY INDEX REGISTER        GP99132
+         NI    WORKX,X'0F'           RETAIN R3 ONLY             GP99139
+         MVI   WORKOPER,$OPER1+$OPERNDX
+         BAL   R9,GENOP000           GENERATE OPERAND           GP99146
+         B     GEN0340               COMPLETE
+*---------------------------------------------------------------------*
+*                                                                     *
+*              GENERATE RXA FORMAT INSTRUCTIONS                       *
+*                                                                     *
+*---------------------------------------------------------------------*
+GENRXA00 DS    0H                                               GP99132
+         ITRACE ID=GENRXA            GENERATE RX FORMAT INSTRUCTION
+         MVC   WORKX,1(R4)           COPY INDEX REGISTER        GP99132
+         NI    WORKX,X'0F'           LEAVE ONLY INDEX REGISTER VALUE
+         MVI   WORKOPER,$OPER1+$OPERNDX                         GP99132
+         BAL   R9,GENOP000           GENERATE OPERAND           GP99132
+         B     GEN0340               COMPLETE                   GP99132
+         SPACE 2
+*---------------------------------------------------------------------*
+*                                                                     *
+*              Generate S format instructions                         *
+*                                                                     *
+*---------------------------------------------------------------------*
+GENS00   DS    0H
+         ITRACE ID=GENS              GENERATE S FORMAT INSTRUCTION
+         MVI   WORKOPER,$OPER1       SET OPERAND 1
+         BAL   R9,GENOP000           GENERATE OPERAND           GP99146
+         B     GEN0340               COMPLETE
+         SPACE 2
+*---------------------------------------------------------------------*
+*                                                                     *
+*              Generate BRANCH instructions                           *
+*                                                                     *
+*---------------------------------------------------------------------*
+GENB000  DS    0H
+         ITRACE ID=GENBRNCH          GENERATE BRANCH INSTRUCTIONS
+         SR    R14,R14               CLEAR REGISTER
+         IC    R14,1(,R4)            INSERT CONDITION CODE AND REGISTER
+         SRL   R14,4                 SHIFT MASK INTO LOW BITS
+         XC    WORKNBR,WORKNBR       ZERO BYTE 1
+         STC   R14,WORKNBR+3         SET BYTE 4
+         TM    SAVEFLAG,$OPCCA       ARITHMETIC MNEMONICS?
+         BO    GENB010               YES
+         TM    SAVEFLAG,$OPCCC       COMPARE MNEMONICS?
+         BO    GENB020               YES
+         L     R1,=A(GENBCCL)     RR FORM3 EXTENDED MNEMONICS   GP10075
+         B     GENB030
+GENB010  DS    0H
+         L     R1,=A(GENBCCA)     ARITHMETIC MNEMONICS          GP10075
+         B     GENB030
+GENB020  DS    0H
+         L     R1,=A(GENBCCC)     COMPARE MNEMONICS             GP10075
+GENB030  DS    0H
+         CLI   0(R1),X'FF'           EXTENDED MNEMONIC NOT FOUND?
+         BE    GENB040               NO
+         CLM   R14,1,0(R1)           MASK FOUND?
+         BE    GENB050               YES
+         LA    R1,7(,R1)             NEXT MASK/EXTENDED MNEMONIC
+         B     GENB030               LOOP
+GENB040  DS    0H
+         MVC   SRCMNEM,BCOPCD        SET OPCODE TO 'BC'
+         BAL   R15,GENNBR00          GENERATE MASK              GP99146
+         BAL   R15,GENCOMMA          GENRATE COMMA              GP99146
+         B     GENB060
+GENB050  DS    0H
+         MVC   SRCMNEM,1(R1)         SET EXTENDED MNEMONIC
+GENB060  DS    0H
+         MVI   WORKOPER,$OPER1+$OPERNDX
+         MVC   WORKX,1(R4)           COPY INDEX REGISTER
+         NI    WORKX,X'0F'           LEAVE ONLY INDEX REGISTER VALUE
+         BAL   R9,GENOP000           GENERATE OPERAND           GP99146
+         B     GEN0340               COMPLETE
+         SPACE 2
+*---------------------------------------------------------------------*
+*                                                                     *
+*              Generate SI format instructions                        *
+*                                                                     *
+*---------------------------------------------------------------------*
+GENSI00  DS    0H
+         ITRACE ID=GENSI             GENERATE SI FORMAT INSTRUCTION
+         MVI   WORKOPER,$OPER1       OPERAND 1
+         BAL   R9,GENOP000           GENERATE OPERAND           GP99146
+         L     R15,GENADDR           CURRENT OUTPUT ADDRESS
+         MVC   0(3,R15),GENSIDLM     INSERT COMMA AND X'
+         MVC   3(2,R15),SRCOBJ1+2    COPY THE VALUE
+         MVI   5(R15),C''''          INSERT CLOSING QUOTE
+         B     GEN0340               COMPLETE
+         SPACE 2
+*---------------------------------------------------------------------*
+*                                                                     *
+*              GENERATE RSI FORMAT INSTRUCTIONS                       *
+*                                                                     *
+*---------------------------------------------------------------------*
+GENRSI00 DS    0H                                               GP99132
+         ITRACE ID=GENRSI            GENERATE SHIFT TYPE INSTRUCTIONS
+         PACK  WORKREG(1),1(1,R4)    FLIP REG #1 INTO LOW NYBBLE
+         BAL   R15,GENREG00          GENERATE REGISTER          GP99132
+         BAL   R15,GENCOMMA          GENERATE COMMA             GP99132
+         MVN   WORKREG,1(R4)         GET R2                     GP99132
+         BAL   R15,GENREG00          GENERATE REGISTER          GP99132
+         BAL   R15,GENCOMMA          GENERATE COMMA             GP99132
+         XC    WORKNBR,WORKNBR       CLEAR                      GP99132
+         MVC   WORKNBR+2(2),2(R4)    GET IMMEDIATE OPERAND      GP99132
+         BAL   R15,GENNBR00          GENERATE NUMERIC           GP99132
+         B     GEN0340               COMPLETE                   GP99132
+*---------------------------------------------------------------------*
+*                                                                     *
+*              Generate RS format instructions (SHIFTS)               *
+*                                                                     *
+*---------------------------------------------------------------------*
+GENRS100 DS    0H
+         ITRACE ID=GENRS1            GENERATE SHIFT TYPE INSTRUCTIONS
+         PACK  WORKREG(1),1(1,R4)    FLIP REG #1 INTO LOW NYBBLE
+         BAL   R15,GENREG00          GENERATE REGISTER          GP99146
+         BAL   R15,GENCOMMA          GENERATE COMMA             GP99146
+         MVI   WORKOPER,$OPER1       OPERAND 1
+         BAL   R9,GENOP000           GENERATE OPERAND           GP99146
+         B     GEN0340               COMPLETE
+         SPACE 2
+*---------------------------------------------------------------------*
+*                                                                     *
+*              Generate RS format instructions (BXH, BXLE, ..)        *
+*                                                                     *
+*---------------------------------------------------------------------*
+GENRS200 DS    0H
+         ITRACE ID=GENRS2            GENERATE BXH, BXLE, ..
+         PACK  WORKREG(1),1(1,R4)    FLIP REG #1 INTO LOW NYBBLE
+         BAL   R15,GENREG00          GENERATE REGISTER          GP99146
+         BAL   R15,GENCOMMA          GENERATE COMMA             GP99146
+         MVC   WORKREG,1(R4)         SET R3
+         BAL   R15,GENREG00          GENERATE REGISTER          GP99146
+         BAL   R15,GENCOMMA          GENERATE COMMA             GP99146
+         MVI   WORKOPER,$OPER1       OPERAND 1
+         BAL   R9,GENOP000           GENERATE OPERAND           GP99146
+         B     GEN0340               DONE
+         SPACE 2
+*---------------------------------------------------------------------*
+*                                                                     *
+*              Generate RS format instructions (CLM, ICM, ..)         *
+*                                                                     *
+*---------------------------------------------------------------------*
+GENRS300 DS    0H
+         ITRACE ID=GENRS3            GENERATE CLM, ICM..
+         PACK  WORKREG(1),1(1,R4)    FLIP REG #1 INTO LOW NYBBLE
+         BAL   R15,GENREG00          GENERATE REGISTER          GP99146
+         BAL   R15,GENCOMMA          GENERATE COMMA             GP99146
+         XC    WORKNBR,WORKNBR       SET WORK NUMERIC
+         MVC   WORKNBR+3(1),1(R4)    COPY MASK
+         NI    WORKNBR+3,X'0F'       LEAVE ONLY MASK
+         BAL   R15,GENNBR00          GENERATE MASK              GP99146
+         BAL   R15,GENCOMMA          GENERATE COMMA             GP99146
+         MVI   WORKOPER,$OPER1       SET FOR OPERAND 1
+         BAL   R9,GENOP000           GENERATE LABEL             GP99146
+         B     GEN0340               DONE
+         SPACE 2
+*---------------------------------------------------------------------*
+*                                                                     *
+*              Generate SS character instructions                     *
+*                                                                     *
+*---------------------------------------------------------------------*
+GENSS100 DS    0H
+         ITRACE ID=GENSS1            GENERATE SS CHARACTER INSTRUCTIONS
+         MVC   WORKX,1(R4)           SET LENGTH
+*NO*NO*  NI    WORKX,X'0F'           LEAVE ONLY INDEX REGISTER  GP05169
+         MVI   WORKOPER,$OPER1+$OPERL
+         BAL   R9,GENOP000           GENERATE LABEL 1           GP99146
+         BAL   R15,GENCOMMA          GENERATE COMMA             GP99146
+         MVI   WORKOPER,$OPER2       OPERAND 2, NO LENGTH
+         BAL   R9,GENOP000           GENERATE LABEL 2           GP99146
+         B     GEN0340               COMPLETE
+         SPACE 2
+*---------------------------------------------------------------------*
+*                                                                     *
+*              Generate SS packed decimal instructions                *
+*                                                                     *
+*---------------------------------------------------------------------*
+GENSS200 DS    0H
+         ITRACE ID=GENSS2            GENERATE SS CHARACTER INSTRUCTIONS
+         PACK  WORKX(1),1(1,R4)      FLIP REG #3 INTO LOW NYBBLE
+         NI    WORKX,X'0F'           LEAVE ONLY L2              GP99139
+         MVI   WORKOPER,$OPER1+$OPERL
+         BAL   R9,GENOP000           GENERATE OPERAND 1         GP99146
+         BAL   R15,GENCOMMA          GENERATE COMMA             GP99146
+         MVC   WORKX,1(R4)           COPY LENGTHS
+         NI    WORKX,X'0F'           LEAVE ONLY L2
+         MVI   WORKOPER,$OPER2+$OPERL
+         BAL   R9,GENOP000           GENERATE OPERAND 2         GP99146
+         B     GEN0340               COMPLETE
+         SPACE 2
+*---------------------------------------------------------------------*
+*                                                                     *
+*              Generate SS (MVCP, MVCS, MVCK)                         *
+*                                                                     *
+*---------------------------------------------------------------------*
+GENSS300 DS    0H
+         ITRACE ID=GENSS3            GENERATE SS CHARACTER INSTRUCTIONS
+         PACK  WORKX(1),1(1,R4)      FLIP REG #3 INTO LOW NYBBLE
+         NI    WORKX,X'0F'           RETAIN R3 ONLY             GP99139
+         MVI   WORKOPER,$OPER1+$OPERNDX
+         BAL   R9,GENOP000           GENERATE OPERAND           GP99146
+         BAL   R15,GENCOMMA          GENERATE COMMA             GP99146
+         MVI   WORKOPER,$OPER2       OPERAND 2
+         BAL   R9,GENOP000           GENERATE OPERAND           GP99146
+         BAL   R15,GENCOMMA          GENERATE COMMA             GP99146
+         MVC   WORKREG,1(R4)         COPY R1 AND R3
+         BAL   R15,GENREG00          GENERATE R3                GP99146
+         B     GEN0340               COMPLETE
+*---------------------------------------------------------------------*
+*                                                                     *
+*              Generate SS (SRP)                                      *
+*                                                                     *
+*---------------------------------------------------------------------*
+GENSS400 DS    0H
+         ITRACE ID=GENSS4            GENERATE SS CHARACTER INSTRUCTIONS
+         PACK  WORKX(1),1(1,R4)      FLIP REG #3 INTO LOW NYBBLE
+         NI    WORKX,X'0F'           RETAIN R3 ONLY             GP99139
+         MVI   WORKOPER,$OPER1+$OPERL
+         BAL   R9,GENOP000           GENERATE OPERAND           GP99146
+         BAL   R15,GENCOMMA          GENERATE COMMA             GP99146
+         MVI   WORKOPER,$OPER2       OPERAND 2
+         BAL   R9,GENOP000           GENERATE OPERAND           GP99146
+         BAL   R15,GENCOMMA          GENERATE COMMA             GP99146
+         MVC   WORKREG,1(R4)         COPY R1 AND R3
+         BAL   R15,GENREG00          GENERATE R3                GP99146
+         B     GEN0340               COMPLETE
+*---------------------------------------------------------------------*
+*                                                                     *
+*              GENERATE SSE FORMAT INSTRUCTIONS                       *
+*                                                                     *
+*---------------------------------------------------------------------*
+GENSSE00 DS    0H                                               GP99132
+         ITRACE ID=GENSSE            GENERATE SS CHARACTER INSTRUCTIONS
+         MVI   WORKOPER,$OPER1       NO LENGTH FIELDS           GP99132
+         BAL   R9,GENOP000           GENERATE LABEL 1           GP99132
+         BAL   R15,GENCOMMA          GENERATE COMMA             GP99132
+         MVI   WORKOPER,$OPER2       OPERAND 2, NO LENGTH       GP99132
+         BAL   R9,GENOP000           GENERATE LABEL 2           GP99132
+         B     GEN0340               COMPLETE                   GP99132
+*---------------------------------------------------------------------*
+*                                                                     *
+*              Generate COMMAs                                        *
+*                                                                     *
+*   R15 is the return address                                         *
+*                                                                     *
+*---------------------------------------------------------------------*
+GENCOMMA DS    0H
+         L     R14,GENADDR           CURRENT ADDRESS
+         MVI   0(R14),C','           INSERT COMMA
+         LA    R14,1(,R14)           NEXT
+         ST    R14,GENADDR           SAVE ADDRESS
+         BR    R15                   DONE
+*---------------------------------------------------------------------*
+*                                                                     *
+*              Generate OPEN parenthesis                              *
+*                                                                     *
+*   R15 is the return address                                         *
+*                                                                     *
+*---------------------------------------------------------------------*
+GENPRN1  DS    0H
+         L     R14,GENADDR           CURRENT ADDRESS
+         MVI   0(R14),C'('           INSERT OPEN PARENTHESIS
+         LA    R14,1(,R14)           NEXT
+         ST    R14,GENADDR           SAVE ADDRESS
+         BR    R15                   DONE
+*---------------------------------------------------------------------*
+*                                                                     *
+*              Generate CLOSE parenthesis                             *
+*                                                                     *
+*   R15 is the return address                                         *
+*                                                                     *
+*---------------------------------------------------------------------*
+GENPRN2  DS    0H
+         L     R14,GENADDR           CURRENT ADDRESS
+         MVI   0(R14),C')'           INSERT CLOSE PARENTHESIS
+         LA    R14,1(,R14)           NEXT
+         ST    R14,GENADDR           SAVE ADDRESS
+         BR    R15                   DONE
+*---------------------------------------------------------------------*
+*                                                                     *
+*              Generate REGISTERS                                     *
+*                                                                     *
+*   WORKREG  is the value of the register to Generate @ GENREG00      *
+*      else R1 has register number for entry at GENREG01              *
+*   R15 is the return address                                         *
+*                                                                     *
+*---------------------------------------------------------------------*
+GENREG00 LA    R1,X'0F'      MAKE MASK FOR REGISTER NUMBER      GP99139
+         N     R1,WORKREG-3          INSERT REGISTER VALUE      GP99139
+GENREG01 SLL   R1,1                  MULTIPLY BY 2
+         L     R14,GENADDR   CURRENT ADDRESS IN OPER AREA       GP10055
+         MVI   0(R14),C'R'           SET REGISTER PREFIX
+         LA    R0,COMMNBR         GET ONE/TWO DIGIT REGS        GP10055
+         TM    COMMOPFG,$OFPLSR   USER WANTS PL/S STYLE ?       GP10055
+         BZ    GENREG03           NO; LEAVE MNEMONIC            GP10055
+         MVI   0(R14),C'@'        SET REGISTER PREFIX           GP10055
+         LA    R0,REGNAME         GET ALL TWO DIGIT REGS        GP10055
+GENREG03 AR    R1,R0              GET REGISTER NUMBER           GP10055
+         TM    COMMOPFG,$OFABSR   USER WANTS ABSOLUTE REGISTER? GP10029
+         BNZ   GENREG05           NO; LEAVE MNEMONIC            GP10055
+         LA    R14,1(,R14)        SPACE OVER R/@                GP10055
+GENREG05 MVC   0(2,R14),0(R1)        COPY REGISTER VALUE
+         LA    R14,1(,R14)           MINIMUM LENGTH             GP10055
+         CLI   0(R14),C' '        ONE DIGIT ?
+         BE    GENREG10              YES
+         LA    R14,1(,R14)           2 DIGIT REGISTER NUMBER
+GENREG10 ST    R14,GENADDR           SAVE CURRENT ADDRESS
+         BR    R15                   DONE
+*---------------------------------------------------------------------*
+*                                                                     *
+*              Generate data operands with or without index           *
+*                                                                     *
+*   WORKOPER flags control Generated source                           *
+*                                                                     *
+*   R9 is the return address                                          *
+*                                                                     *
+*---------------------------------------------------------------------*
+GENOP000 DS    0H
+         DROP  R5
+         USING LABLDSCT,R2           DEFINE BASE
+         CL    R3,DISPR      LABEL REFERENCE?                   GP99146
+         BNE   GENOP070              NO
+         TM    WORKOPER,$OPER2       OPERAND 2?
+         BO    GENOP010              YES
+         MVC   WORKNBR,REFDISP1      COPY DISPLACEMENT
+         ICM   R2,15,REFOPER1        LABEL REFERENCE?
+         BZ    GENOP080              LABEL NOT REFERENCED
+         B     GENOP020
+GENOP010 DS    0H
+         MVC   WORKNBR,REFDISP2      COPY DISPLACEMENT
+         ICM   R2,15,REFOPER2        LABEL REFERENCE?
+         BZ    GENOP090              LABEL NOT REFERENCED
+GENOP020 DS    0H
+         L     R14,GENADDR           CURRENT ADDRESS IN SRCOPER
+         MVC   0(L'LABLNAME,R14),LABLNAME
+GENOP030 DS    0H
+         CLI   0(R14),C' '           BLANK?
+         BE    GENOP040              YES
+         LA    R14,1(,R14)           NEXT
+         B     GENOP030              LOOP
+GENOP040 DS    0H
+         ST    R14,GENADDR           SAVE ADDRESS
+         OC    WORKNBR,WORKNBR       DISPLACEMENT ZERO?
+         BZ    GENOP050              YES, DIRECT REFERENCE
+         MVI   0(R14),C'+'           INSERT PLUS
+         LA    R14,1(,R14)           NEXT
+         ST    R14,GENADDR           SAVE ADDRESS
+         BAL   R15,GENNBR00          GENERATE DISPLACEMENT      GP99146
+GENOP050 DS    0H
+         TM    WORKOPER,$OPERL       LENGTH WITH OPERAND?
+         BO    GENOP060              YES
+         TM    WORKOPER,$OPERNDX     INDEX WITH OPERAND?
+         BNOR  R9                    NO, DONE
+         CLI   WORKX,0               INDEX ZERO?
+         BER   R9                    YES
+         BAL   R15,GENPRN1           OPEN PARENTHESIS           GP99146
+         MVC   WORKREG,WORKX         SET REGISTER
+         BAL   R15,GENREG00          GEN REGISTER               GP99146
+         BAL   R15,GENPRN2           CLOSE PARENTHESIS          GP99146
+         BR    R9                    DONE
+GENOP060 DS    0H
+         BAL   R15,GENPRN1           OPEN PARENTHESIS           GP99146
+         SR    R1,R1                 CLEAR REGISTER
+         IC    R1,WORKX              INSERT LENGTH
+         LA    R1,1(,R1)             PLUS 1
+         ST    R1,WORKNBR    SET LENGTH                         GP99161
+         BAL   R15,GENNBR00          GEN LENGTH                 GP99146
+         BAL   R15,GENPRN2           CLOSE PARENTHESIS          GP99146
+         BR    R9                    DONE
+GENOP070 DS    0H
+         TM    WORKOPER,$OPER2       OPERAND 2?
+         BO    GENOP090              YES
+GENOP080 DS    0H
+         XC    WORKNBR,WORKNBR       CLEAR WORK NUMERIC
+         MVC   WORKNBR+2(2),2(R4)    COPY DISPLACEMENT
+         SR    R1,R1                 CLEAR REGISTER
+         IC    R1,2(,R4)             INSERT BASE 1
+         B     GENOP100
+GENOP090 DS    0H
+         XC    WORKNBR,WORKNBR       CLEAR WORK NUMERIC
+         MVC   WORKNBR+2(2),4(R4)    COPY DISPLACEMENT
+         SR    R1,R1                 CLEAR REGISTER
+         IC    R1,4(,R4)             INSERT BASE 2
+GENOP100 DS    0H
+         NI    WORKNBR+2,X'0F'       LEAVE ONLY DISPLACEMENT
+         SRL   R1,4                  SHIFT TO LOW BITS
+         STC   R1,WORKBASE           SAVE BASE
+         BAL   R15,GENNBR00          GENERATE DISPLACEMENT      GP99146
+         TM    WORKOPER,$OPERL       LENGTH WITH OPERAND?
+         BO    GENOP120              YES
+         TM    WORKOPER,$OPERNDX     INDEX WITH OPERAND?
+         BNO   GENOP110              NO
+         OC    WORKX(2),WORKX        BASE AND INDEX ZERO?
+         BZR   R9                    YES, DONE
+         B     GENOP120
+GENOP110 DS    0H
+         CLI   WORKBASE,0            BASE ZERO?
+         BER   R9                    YES, DONE
+GENOP120 DS    0H
+         BAL   R15,GENPRN1           OPEN PARENTHESIS           GP99146
+         TM    WORKOPER,$OPERNDX     INDEX?
+         BNO   GENOP140              NO
+         CLI   WORKX,0               INDEX ZERO?
+         BE    GENOP130              YES
+         MVC   WORKREG,WORKX         SET REGISTER
+         BAL   R15,GENREG00          GEN INDEX                  GP99146
+         CLI   WORKBASE,0            BASE ZERO?
+         BE    GENOP160              YES
+GENOP130 DS    0H
+         BAL   R15,GENCOMMA          GEN COMMA                  GP99146
+GENOP140 DS    0H
+         TM    WORKOPER,$OPERL       LENGTH PRESENT?
+         BNO   GENOP150              NO
+         SR    R1,R1                 CLEAR REGISTER
+         IC    R1,WORKX              INSERT LENGTH
+         LA    R1,1(,R1)             PLUS 1
+         ST    R1,WORKNBR            SET LENGTH
+         BAL   R15,GENNBR00          GENERATE LENGTH            GP99146
+         BAL   R15,GENCOMMA          GEN COMMA                  GP99146
+         B     GENOP152                                         GP10034
+GENOP150 DS    0H
+         CLI   WORKBASE,0            BASE ZERO?
+         BE    GENOP160              YES
+GENOP152 MVC   WORKREG,WORKBASE      SET REGISTER
+         BAL   R15,GENREG00          GENERATE BASE REGISTER     GP99146
+GENOP160 DS    0H
+         BAL   R15,GENPRN2           CLOSING PARENTHESIS        GP99146
+         BR    R9                    DONE
+*---------------------------------------------------------------------*
+*                                                                     *
+*              Generate lengths/displacements                         *
+*                                                                     *
+*   WORKNBR will be set to the length or displacement value           *
+*                                                                     *
+*   R15 is the return address                                         *
+*                                                                     *
+*---------------------------------------------------------------------*
+GENNBR00 DS    0H
+         ST    R15,GENNBRSV  SAVE R15                           GP99161
+         L     R1,WORKNBR            DISPLACEMENT VALUE
+         CVD   R1,COMMDWRD           CONVERT TO DECIMAL
+         MVC   DISPWORK,DISPEDWD     INITIALIZE WITH EDIT WORD
+         LA    R1,DISPWORK+L'DISPWORK-1  POINT TO LAST BYTE     GP99170
+         LR    R15,R1        AND RETAIN IT FOR LENGTH           GP99170
+         EDMK  DISPWORK,COMMDWRD+2   EDIT DISPLACEMENT          GP99170
+         L     R14,GENADDR           CURRENT OUTPUT ADDRESS
+         SR    R15,R1        GET TEXT LENGTH-1                  GP99170
+         EX    R15,EXNBRMVC  MOVE NUMBER                        GP99170
+         LA    R14,1(R15,R14)  SET NEXT ADDRESS                 GP99170
+         ST    R14,GENADDR           SAVE ADDRESS
+         L     R15,GENNBRSV  RESTORE R15                        GP99161
+         BR    R15                   DONE
+EXNBRMVC MVC   0(0,R14),0(R1)  MOVE NUMBER                      GP99170
+*---------------------------------------------------------------------*
+*                                                                     *
+*   ERROR MESSAGES                                                    *
+*                                                                     *
+*---------------------------------------------------------------------*
+         SPACE 1
+ERR0010  OC    PRTDATA(EMSG01L),EMSG01      COMPLETE MESSAGE    GP10075
+         UNPK  PRTDATA+EMSG01A-EMSG01(9),DATABEGN(5)            GP10075
+         TR    PRTDATA+EMSG01A-EMSG01(8),COMMHXTR    TRANSLATE  GP10075
+         MVI   PRTDATA+EMSG01A-EMSG01+8,C' ' CLEAR GARBAGE      GP10075
+         UNPK  PRTDATA+EMSG01B-EMSG01(9),DATAEND(5)             GP10075
+         TR    PRTDATA+EMSG01B-EMSG01(8),COMMHXTR    TRANSLATE  GP10075
+         MVI   PRTDATA+EMSG01B-EMSG01+8,C' ' CLEAR GARBAGE      GP10075
+         ST    R3,COMMDWRD   SET CURRENT DISPLACEMENT           GP10075
+         UNPK  PRTDATA+EMSG01D-EMSG01(9),DISPD(5)               GP10075
+         TR    PRTDATA+EMSG01D-EMSG01(8),COMMHXTR    TRANSLATE  GP10075
+         MVI   PRTDATA+EMSG01D-EMSG01+8,C' ' CLEAR GARBAGE      GP10075
+         OI    COMMFLAG,$ERROR
+         BAL   R9,PRT0000            PRINT MESSAGE              GP99146
+         B     EXIT0000              AND EXIT
+ERR0020  DS    0H
+         MVC   PRTDATA(EMSG02L),EMSG02
+         MVI   PRTDATA+EMSG02L+1,C'@'                           GP10018
+         UNPK  OBJOUT(9),DISPI(5)      DISPLACEMENT             GP10018
+         TR    OBJOUT,COMMHXTR                                  GP10018
+         MVC   PRTDATA+EMSG02L+3(6),OBJOUT+2                    GP10018
+         MVI   PRTDATA+EMSG02L+10,C':'                          GP10018
+         UNPK  OBJOUT(9),0(5,R4)       INSTRUCTION              GP10018
+         TR    OBJOUT,COMMHXTR                                  GP10018
+         MVC   PRTDATA+EMSG02L+12(8),OBJOUT                     GP10018
+         OI    COMMFLAG,$ERROR
+         BAL   R9,PRT0000            PRINT MESSAGE              GP99146
+         ABEND 0009,DUMP,,USER       ABEND                      GP99141
+         SPACE 1                                                GP99141
+ERR0030  DS    0H
+         MVC   PRTDATA(EMSG03L),EMSG03
+         MVI   PRTDATA+EMSG03L+1,C'@'                           GP10048
+         UNPK  OBJOUT(9),DISPI(5)      DISPLACEMENT             GP10048
+         TR    OBJOUT,COMMHXTR                                  GP10048
+         MVC   PRTDATA+EMSG03L+3(6),OBJOUT+2                    GP10048
+         OI    COMMFLAG,$ERROR
+         BAL   R9,PRT0000            PRINT MESSAGE              GP99146
+         B     EXIT0000              AND EXIT
+ERR0040  DS    0H
+         MVC   PRTDATA(EMSG04L),EMSG04
+         OI    COMMFLAG,$ERROR
+         BAL   R9,PRT0000            PRINT MESSAGE              GP99146
+         BAL   R14,TRACEPRT  PRINT TRACE                        GP99146
+         LA    R1,ABEND005   SET ABEND CODE (NOT ADDRESS)       GP99146
+         ABEND (1),DUMP,,USER                                   GP99146
+         SPACE 1                                                GP99134
+***********************************************************************
+**                                                                   **
+**   PUNCH OUTPUT                                                    **
+**                                                                   **
+**   INCREMENT SEQUENCE NUMBER EVEN WHEN NOT PUNCHING (FOR PRTSTMT)  **
+**                                                                   **
+***********************************************************************
+PUNCH000 UNPK  SRCSEQ,CARDSEQ    MAKE PRINTABLE                 GP99134
+         OI    SRCSEQ+L'SRCSEQ-1,C'0'  MAKE SURE                GP99134
+         CLI   SRCLABL,C' '  ANY LABEL PRESENT?                 GP99184
+         BNH   PUNCH020      NO                                 GP99184
+         PUSH  USING                                            GP99184
+         LA    R2,COMMLABL   GET TO START OF CHAIN              GP99184
+         USING LABLDSCT,R2                                      GP99184
+PUNCH010 ICM   R2,15,LABLNEXT                                   GP99184
+         BZ    PUNCH020      NOT FOUND                          GP99184
+         CLC   LABLNAME,SRCLABL   DESIRED NAME?                 GP99184
+         BNE   PUNCH010      NO; TRY ANOTHER                    GP99184
+         ZAP   LABLSTMT,CARDSEQ  SAVE LABEL DEFINITION          GP99184
+         POP   USING                                            GP99184
+PUNCH020 AP    CARDSEQ,CARDINC   COUNT CARDS                    GP99134
+         TM    COMMDD,$PUNCHDD       IS DISPUNCH DD PRESENT?    GP99184
+         BNOR  R9                    NO
+         LA    R1,SRCLABL    POINT TO CARD IMAGE                GP10048
+         BAL   R14,PUNCHCRD          PUNCH SOURCE STATEMENT     GP10048
+         BR    R9                    RETURN
+         SPACE 1                                                GP99134
+***********************************************************************
+**                                                                   **
+**   PRINT OUTPUT                                                    **
+**                                                                   **
+**   PRTSTMT ADDS THE STATEMENT NUMBER OT THE OUTPUT LINE            **
+**   PRT0000 PRINT THE CURRENT PRINT LINE AS IS                      **
+**                                                                   **
+***********************************************************************
+PRTUSER  MVC   PRTDATA(SRCL),SRC     SET PRINT DATA
+PRTSTMT  MVC   PRTDATA+SRCSTMT-SRC(L'SRCSTMT),SRCSEQ+1          GP99134
+         MVC   PRTDATA+SRCSEQ-SRC(L'SRCSEQ),SRCSEQ              GP99134
+         SPACE 1                                                GP99134
+PRT0000  LA    R15,PRINTREC  SET TO PRINT AND CLEAR RECORD      GP99152
+         TM    COMMFLAG,$ERROR       ERROR MESSAGE?             GP99132
+         BNZ   PRT0010               YES; PRINT IT              GP99132
+         TM    PRINTFG2,$PFASM       PRINT ASSEMBLY OUTPUT?     GP99132
+         BNZ   PRT0010               YES                        GP99132
+         LA    R15,PRINTCLR  SET TO CLEAR PRINT LINE            GP99152
+PRT0010  BALR  R14,R15       PRINT & CLEAR, OR JUST CLEAR       GP99152
+         BR    R9                    RETURN
+EXIT0000 DS    0H
+         ITRACE ID=EXIT
+         L     R13,4(,R13)           RESTORE REGISTER 13
+         LM    R14,R12,12(R13)       RESTORE ALL OTHER REGISTERS
+         SR    R15,R15               GIVE GOOD RETURN CODE
+         BR    R14                   RETURN TO CALLER
+         SPACE 2                                                GP99184
+*---------------------------------------------------------------------*
+*                                                                     *
+*    FIND LABLDSCT ENTRY BY NAME (@ IN R1)                            *
+*                                                                     *
+*---------------------------------------------------------------------*
+         PUSH  USING                                            GP99184
+FINDLABL LA    R2,COMMLABL   GET TO START OF CHAIN              GP99184
+         USING LABLDSCT,R2                                      GP99184
+FINDLABM CLC   LABLNAME,0(R1)  PASSED NAME?                     GP99184
+         BE    REFLABEL      YES; ADD ENTRY                     GP99184
+         ICM   R2,15,LABLNEXT                                   GP99184
+         BNZ   FINDLABM      CHECK IT                           GP99184
+         BR    R14           RETURN TO CALLER                   GP99184
+         SPACE 1                                                GP99184
+*---------------------------------------------------------------------*
+*                                                                     *
+*    BUILD CROSS-REFERENCE FOR LABEL BLOCK (@ IN R2)                  *
+*                                                                     *
+*---------------------------------------------------------------------*
+REFLABEL TM    PRINTFG2,$PFXRF   USER WANT CROSS-REFERENCE?     GP99184
+         BZR   R14           NO; JUST RETURN                    GP99184
+         STM   R14,R1,PRINTRSV SAVE VITAL REGISTERS             GP99184
+         LA    R15,LABLXREF   GET LABEL CROSS-REFERENCE CHAIN   GP99184
+         DROP  R2                                               GP99184
+REFLABEM LR    R2,R15        SAVE INSERTION ADDRESS             GP99184
+         ICM   R15,15,0(R2)  GET FIRST/NEXT ENTRY               GP99184
+         BZ    REFLABEN      NONE; INSERT A NEW ONE             GP99184
+         CP    CARDSEQ,4(L'CARDSEQ,R15)                         GP99184
+         BH    REFLABEM      NOT YET                            GP99184
+         BE    REFLABEZ      DUPLICATE                          GP99184
+REFLABEN LA    R0,4+L'CARDSEQ  MAKE LAZY CHAIN - ONE ENTRY PER  GP99184
+         BAL   R14,GETMAIN   GET ONE                            GP99184
+         MVC   0(4,R1),0(R2)  CHAIN OLD FORWARD POINTER         GP99184
+         MVC   4(L'CARDSEQ,R1),CARDSEQ                          GP99184
+         ST    R1,0(,R2)     COMPLETE CHAIN                     GP99184
+REFLABEZ LM    R14,R1,PRINTRSV RESTORE VITAL REGISTERS          GP99184
+         BR    R14           RETURN TO CALLER                   GP99184
+         POP   USING                                            GP99184
+         SPACE 2                                                GP99183
+         LTORG                                                  GP99183
+*---------------------------------------------------------------------*
+*                                                                     *
+*              EXECUTED INSTRUCTIONS                                  *
+*                                                                     *
+*---------------------------------------------------------------------*
+NPRTTRT  TRT   0(0,R4),COMMNPRT      SCAN NON-PRINTABLE
+PRTTRT   TRT   0(0,R4),COMMPRT       SCAN PRINTABLE
+CHDCMVC  MVC   SRCOPER+2(0),0(R4)    COPY CHARACTER DATA
+*---------------------------------------------------------------------*
+*                                                                     *
+*              WORK AREAS                                             *
+*                                                                     *
+*---------------------------------------------------------------------*
+ASVCDESC DC    A(SVCDESC)            SVC DESCRIPTIONS
+         SPACE 1
+REGNAME  DC    C'00',C'010203040506070809101112131415'  @ REGS  GP10055
+         SPACE 1
+GENADDR  DC    A(0)                  CURRENT ADDRESS IN SRCOPER AREA
+GENNBRSV DC    A(0)                  R15 SAVE AREA FOR 'GENNBR'
+         SPACE 1
+DISPCNTL DS    0C
+         DC    CL8'INSTR'            EYECATCHER
+DISPI    DC    XL4'000000'           INSTRUCTION DISPLACEMENT
+         DC    CL8'LABEL'            EYECATCHER
+DISPL    DC    XL4'000000'           LABEL DISPLACEMENT
+         DC    CL8'DATA '            EYECATCHER
+DISPD    DC    XL4'000000'           DATA DISPLACEMENT
+         DC    CL8'REF  '            EYECATCHER
+DISPR    DC    XL4'000000'           REFERENCE DISPLACEMENT
+         SPACE 2
+WORKNBR  DC    A(0)                  LENGTHS/DISPLACEMENTS WORK AREA
+WORKOPER DC    X'00'                 OPERAND TO GENERATE
+$OPER1   EQU   X'80'                 .. OPERAND 1
+$OPER2   EQU   X'40'                 .. OPERAND 2
+$OPERNDX EQU   X'20'                 .. INDEXED OPERAND
+$OPERL   EQU   X'10'                 .. OPERAND WITH LENGTH
+WORKX    DC    X'00'                 INDEX REGISTER OR LENGTH
+WORKBASE DC    X'00'                 BASE REGISTER
+WORKREG  DC    X'00'
+         SPACE 1                                                GP99137
+OPLENGTH DC    H'1'          LENGTH OF CURRENT INSTRUCTION      GP99137
+         SPACE 2
+* ------------------------------------------------------------------- *
+*           FLAG/SWITCH BYTES                                         *
+* ------------------------------------------------------------------- *
+PRTFLAG  DC    X'00'                 HEADING FLAGS
+$SUBH    EQU   X'80'                 .. SUBHEADING PRINTED
+SAVEFLAG DC    X'00'                 'FLAG' BYTE FOR EXTENDED MNEMONICS
+         SPACE 1
+DISPWORK DC    0CL12' '                                         GP99169
+DISPLONG DC    CL80' '       LOTS OF ROOM FOR WORKING           GP99169
+DISPEDWD DC    X'402020202020202020202120'
+CSCTOPCD DC    CL6'CSECT'
+ENTROPCD DC    CL6'ENTRY'
+CXDOPCD  DC    CL6'CXD'
+DROPOPCD DC    CL6'DROP'
+USNGOPCD DC    CL6'USING'
+ENDOPCD  DC    CL6'END'
+BCOPCD   DC    CL6'BC'
+HEXDC    DC    C'X'''
+CHARDC   DC    C'C'''
+GENSIDLM DC    C',X'''               DELIMITER AND X'
+CHARZERO DC    CL8'00000000'         CONSTANT
+CARDSEQ  DC    P'12345678'           CARD COUNTER               GP99134
+CARDINC  DC    P'100'                INCREMENT                  GP99134
+DCPLIST  DC    CL12'PLIST'                                      GP10018
+         DC    C' '     1/2                                     GP99146
+LOCLABEL DC    CL8' '   2/2  LABEL ON NEXT INSTRUCTION OR DC    GP99146
+SUBHEAD  DS    0C
+         DC    CL08'  DISP  '
+         DC    CL02' '
+         DC    CL19'OBJECT CODE'                                GP99141
+         DC    CL02' '                                          GP99134
+         DC    CL05' STMT'                                      GP99134
+         DC    CL02' '                                          GP99134
+         DC    CL08' LABEL '
+         DC    CL01' '
+         DC    CL05'OPCODE'                                     GP10034
+         DC    CL01' '
+         DC    CL25'OPERANDS'
+         DC    CL06' '                                          GP10034
+         DC    CL07'COMMENT'
+SUBHEADL EQU   *-SUBHEAD
+         DC    C' '     1/n  FAST BLANKING
+SRC      DS    0C
+SRCDISP  DC    CL08' '               DISPLACEMENT
+         DC    CL02' '
+SRCOBJ1  DC    CL04' '               OBJECT CODE BYTES 1 AND 2
+         DC    CL01' '
+SRCOBJ2  DC    CL04' '               OBJECT CODE BYTES 3 AND 4
+         DC    CL01' '
+SRCOBJ3  DC    CL04' '               OBJECT CODE BYTES 5 AND 6
+         DC    CL01' '                                          GP99141
+SRCOBJ4  DC    CL04' '      (DATA)   OBJECT CODE BYTES 7 AND 8  GP99141
+         DC    CL02' '                                          GP99134
+SRCSTMT  DC    CL05' '               STATEMENT NUMBER           GP99134
+         DC    CL02' '                                          GP99134
+SRCLABL  DC    CL08' '  01 - 08      LABEL
+         DC    CL01' '  09 - 09
+SRCMNEM  DC    CL05' '  10 - 14      MNEMONIC                   GP10034
+         DC    CL01' '  15 - 15
+SRCOPER  DC    CL35' '  16 - 50      OPERANDS
+         ORG   SRCLABL+46
+SRCCMNT  DC    CL25' '  46 - 71      COMMENTS
+         DC    CL01' '  72 - 72      CONTINUATION COLUMN
+SRCSEQ   DC    CL08' '  73 - 80      STATEMENT SEQUENCE NUMBER
+SRCL     EQU   *-SRC
+OBJIN    DC    CL8' '                INPUT STAGING AREA
+OBJOUT   DC    CL16' ',C' '          OBJECT CODE                GP99141
+OBJLEN   DC    AL1(1,3,6,8,11,13,16,18)                         GP99141
+TRMSK1 DC AL1(00,01,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16)
+TRMSK2 DC AL1(00,01,02,03,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16)
+       DC AL1(00,01,02,03,16,04,05,16,16,16,16,16,16,16,16,16,16,16,16)
+       DC AL1(00,01,02,03,16,04,05,06,07,16,16,16,16,16,16,16,16,16,16)
+       DC AL1(00,01,02,03,16,04,05,06,07,16,08,09,16,16,16,16,16,16,16)
+       DC AL1(00,01,02,03,16,04,05,06,07,16,08,09,10,11,16,16,16,16,16)
+       DC AL1(00,01,02,03,16,04,05,06,07,16,08,09,10,11,16,12,13,16,16)
+       DC AL1(00,01,02,03,16,04,05,06,07,16,08,09,10,11,16,12,13,14,15)
+TRMSKDC  DC 16AL1(*-TRMSKDC),3AL1(16)    DATA FOR DC            GP10018
+         SPACE 1                                                GP99141
+EMSG01   DC    C'DISASM0901E DATA/FILLER '                      GP10075
+EMSG01A  DC    CL8' ',C' TO '                                   GP10075
+EMSG01B  DC    CL8' '                                           GP10075
+         DC    C' CONFLICTS WITH INSTRUCTION AT '               GP10075
+EMSG01D  DC    CL8' '
+EMSG01L  EQU   *-EMSG01
+EMSG02   DC    C'DISASM0902E INVALID OPCODE DETECTED'
+EMSG02L  EQU   *-EMSG02
+EMSG03   DC    C'DISASM0903E DC WITH LENGTH = ZERO DETECTED'
+EMSG03L  EQU   *-EMSG03
+EMSG04   DC    C'DISASM0904E ATTEMPT TO GENERATE INSTRUCTION ON AN ODD +
+               ADDRESS BOUNDARY'
+EMSG04L  EQU   *-EMSG04
+*---------------------------------------------------------------------*
+*                                                                     *
+*    DATA CONTROL BLOCKS                                              *
+*                                                                     *
+*---------------------------------------------------------------------*
+         PRINT NOGEN                                            GP99134
+SYSIN    DCB   DDNAME=SYSIN,         ASSEMBLER INPUT FILE              +
+               DSORG=PS,             .. SEQUENTIAL                     +
+               EODAD=GEN0720,        .. END OF DATA                    +
+               LRECL=80,             .. LRECL IS 80                    +
+               MACRF=GL              .. GET LOCATE MODE
+         SPACE 2
+PACKTBL  DC    256X'FF'      MAKE ALL INVALID                   GP99183
+         ORG   PACKTBL+X'00'                                    GP99183
+         DC    10X'00'       00-09                              GP99183
+         ORG   PACKTBL+X'10'                                    GP99183
+         DC    10X'00'       10-19                              GP99183
+         ORG   PACKTBL+X'20'                                    GP99183
+         DC    10X'00'       20-29                              GP99183
+         ORG   PACKTBL+X'30'                                    GP99183
+         DC    10X'00'       30-39                              GP99183
+         ORG   PACKTBL+X'40'                                    GP99183
+         DC    10X'00'       40-49                              GP99183
+         ORG   PACKTBL+X'50'                                    GP99183
+         DC    10X'00'       50-59                              GP99183
+         ORG   PACKTBL+X'60'                                    GP99183
+         DC    10X'00'       60-69                              GP99183
+         ORG   PACKTBL+X'70'                                    GP99183
+         DC    10X'00'       70-79                              GP99183
+         ORG   PACKTBL+X'80'                                    GP99183
+         DC    10X'00'       80-89                              GP99183
+         ORG   PACKTBL+X'90'                                    GP99183
+         DC    10X'00'       90-99                              GP99183
+         ORG   PACKTBL+X'0C'                                    GP99183
+         DC    X'0408'       0+ -                               GP99183
+         ORG   PACKTBL+X'0F'                                    GP99183
+         DC    X'04'         0+                                 GP99183
+         ORG   PACKTBL+X'1C'                                    GP99183
+         DC    X'0408'       1+ -                               GP99183
+         ORG   PACKTBL+X'1F'                                    GP99183
+         DC    X'04'         1+                                 GP99183
+         ORG   PACKTBL+X'2C'                                    GP99183
+         DC    X'0408'       2+ -                               GP99183
+         ORG   PACKTBL+X'2F'                                    GP99183
+         DC    X'04'         2+                                 GP99183
+         ORG   PACKTBL+X'3C'                                    GP99183
+         DC    X'0408'       3+ -                               GP99183
+         ORG   PACKTBL+X'3F'                                    GP99183
+         DC    X'04'         3+                                 GP99183
+         ORG   PACKTBL+X'4C'                                    GP99183
+         DC    X'0408'       4+ -                               GP99183
+         ORG   PACKTBL+X'4F'                                    GP99183
+         DC    X'04'         4+                                 GP99183
+         ORG   PACKTBL+X'5C'                                    GP99183
+         DC    X'0408'       5+ -                               GP99183
+         ORG   PACKTBL+X'5F'                                    GP99183
+         DC    X'04'         5+                                 GP99183
+         ORG   PACKTBL+X'6C'                                    GP99183
+         DC    X'0408'       6+ -                               GP99183
+         ORG   PACKTBL+X'6F'                                    GP99183
+         DC    X'04'         6+                                 GP99183
+         ORG   PACKTBL+X'7C'                                    GP99183
+         DC    X'0408'       7+ -                               GP99183
+         ORG   PACKTBL+X'7F'                                    GP99183
+         DC    X'04'         7+                                 GP99183
+         ORG   PACKTBL+X'8C'                                    GP99183
+         DC    X'0408'       8+ -                               GP99183
+         ORG   PACKTBL+X'8F'                                    GP99183
+         DC    X'04'         8+                                 GP99183
+         ORG   PACKTBL+X'9C'                                    GP99183
+         DC    X'0408'       9+ -                               GP99183
+         ORG   PACKTBL+X'9F'                                    GP99183
+         DC    X'04'         9+                                 GP99183
+         ORG   ,                                                GP99183
+         SPACE 2
+*---------------------------------------------------------------------*
+*   EXTENDED BRANCH CODE MNEMONICS FOR BC AND BCR                     *
+*---------------------------------------------------------------------*
+GENRRCCA DS    0C                    COMPARE MNEMONICS
+         DC    X'00',CL6'NOPR  '     NO-OP
+         DC    X'01',CL6'BOR   '     BRANCH OVERFLOW
+         DC    X'02',CL6'BPR   '     BRANCH PLUS
+         DC    X'04',CL6'BMR   '     BRANCH MINUS
+         DC    X'07',CL6'BNZR  '     BRANCH NOT ZERO
+         DC    X'08',CL6'BZR   '     BRANCH IF ZERO
+         DC    X'0B',CL6'BNMR  '     BRANCH NOT MINUS
+         DC    X'0D',CL6'BNPR  '     BRANCH NOT PLUS
+         DC    X'0E',CL6'BNOR  '     BRANCH NOT OVERFLOW
+         DC    X'0F',CL6'BR    '     UNCONDITIONAL BRANCH
+         DC    X'FF'
+GENRRCCC DS    0C                    ARITHMETIC MNEMONICS
+         DC    X'00',CL6'NOPR  '     NO-OP
+         DC    X'02',CL6'BHR   '     BRANCH HIGH
+         DC    X'04',CL6'BLR   '     BRANCH LOW
+         DC    X'07',CL6'BNER  '     BRANCH NOT EQUAL
+         DC    X'08',CL6'BER   '     BRANCH EQUAL
+         DC    X'0B',CL6'BNLR  '     BRANCH NOT LOW
+         DC    X'0D',CL6'BNHR  '     BRANCH NOT HIGH
+         DC    X'0F',CL6'BR    '     UNCONDITIONAL BRANCH
+         DC    X'FF'
+GENRRCCL DS    0C                    LOGICAL MNEMONICS
+         DC    X'00',CL6'NOPR  '     NO-OP
+         DC    X'01',CL6'BOR   '     BRANCH ONES
+         DC    X'04',CL6'BMR   '     BRANCH MIXED
+         DC    X'07',CL6'BNZR  '     BRANCH NOT ZEROS
+         DC    X'08',CL6'BZR   '     BRANCH IF ZEROS
+         DC    X'0B',CL6'BNMR  '     BRANCH NOT MIXED
+         DC    X'0E',CL6'BNOR  '     BRANCH NOT ONES
+         DC    X'0F',CL6'BR    '     UNCONDITIONAL BRANCH
+         DC    X'FF'
+GENBCCA  DS    0C                    COMPARE MNEMONICS
+         DC    X'00',CL6'NOP   '     NO-OP
+         DC    X'01',CL6'BO    '     BRANCH OVERFLOW
+         DC    X'02',CL6'BP    '     BRANCH PLUS
+         DC    X'04',CL6'BM    '     BRANCH MINUS
+         DC    X'07',CL6'BNZ   '     BRANCH NOT ZERO
+         DC    X'08',CL6'BZ    '     BRANCH IF ZERO
+         DC    X'0B',CL6'BNM   '     BRANCH NOT MINUS
+         DC    X'0D',CL6'BNP   '     BRANCH NOT PLUS
+         DC    X'0E',CL6'BNO   '     BRANCH NOT OVERFLOW
+         DC    X'0F',CL6'B     '     UNCONDITIONAL BRANCH
+         DC    X'FF'
+GENBCCC  DS    0C                    ARITHMETIC MNEMONICS
+         DC    X'00',CL6'NOP   '     NO-OP
+         DC    X'02',CL6'BH    '     BRANCH HIGH
+         DC    X'04',CL6'BL    '     BRANCH LOW
+         DC    X'07',CL6'BNE   '     BRANCH NOT EQUAL
+         DC    X'08',CL6'BE    '     BRANCH EQUAL
+         DC    X'0B',CL6'BNL   '     BRANCH NOT LOW
+         DC    X'0D',CL6'BNH   '     BRANCH NOT HIGH
+         DC    X'0F',CL6'B     '     UNCONDITIONAL BRANCH
+         DC    X'FF'
+GENBCCL  DS    0C                    LOGICAL MNEMONICS
+         DC    X'00',CL6'NOP   '     NO-OP
+         DC    X'01',CL6'BO    '     BRANCH ONES
+         DC    X'04',CL6'BM    '     BRANCH MIXED
+         DC    X'07',CL6'BNZ   '     BRANCH NOT ZEROS
+         DC    X'08',CL6'BZ    '     BRANCH IF ZEROS
+         DC    X'0B',CL6'BNM   '     BRANCH NOT MIXED
+         DC    X'0E',CL6'BNO   '     BRANCH NOT ONES
+         DC    X'0F',CL6'B     '     UNCONDITIONAL BRANCH
+         DC    X'FF'
+         SPACE 2
+*---------------------------------------------------------------------*
+*    INSTRUCTION FORMATTING ROUTINE ADRESSES                          *
+*---------------------------------------------------------------------*
+FMTTABLE DC    A(GENE0000)           E  FORMAT - NO OPERANDS (UPT)
+         DC    A(GENRR100)           RR FORMAT 1
+         DC    A(GENRR200)           RR FORMAT 2 (SVC)
+         DC    A(GENRR300)           RR FORMAT 3 (MASK TYPE)
+         DC    A(GENRR400)           RR FORMAT 4 (R1 ONLY)      GP99132
+         DC    A(GENRR500)           RR FORMAT 5 (R2 ONLY)      GP99132
+         DC    A(GENRRE00)           RRE FORMAT  (R1,R2 IN FOURTH BYTE)
+         DC    A(GENRX00)            RX FORMAT
+         DC    A(GENRXA00)           RX FORMAT - NO R1          GP99132
+         DC    A(GENS00)             S  FORMAT
+         DC    A(GENSI00)            SI FORMAT
+         DC    A(GENRSI00)           RI/RSI FORMAT (R,R,IMM) AHI
+         DC    A(GENRS100)           RS FORMAT 1
+         DC    A(GENRS200)           RS FORMAT 2 (BXLE, BXH, ..)
+         DC    A(GENRS300)           RS FORMAT 3 (MASK TYPE-TM, CLM..)
+         DC    A(GENSS100)           SS FORMAT 1 (CHARACTER-CHARACTER)
+         DC    A(GENSS200)           SS FORMAT 2 (PACKED DECIMAL)
+         DC    A(GENSS300)           SS FORMAT 3 (MVCS, MVCP)
+         DC    A(GENSS400)           SS FORMAT 4 (SRP)
+         DC    A(GENSSE00)           SSE FORMAT                 GP99132
+         DC    A(GENRREZ0)           SSE FORMAT (NO REGISTERS)  GP10018
+         DC    A(GENRRE30)           SSE FORMAT (R1 ONLY)       GP10018
+         SPACE 2                                                GP99183
+*---------------------------------------------------------------------*
+*                                                                     *
+*              SVC DESCRIPTIONS                                       *
+*                                                                     *
+*---------------------------------------------------------------------*
+SVCDESC  DS    0C
+         SVCDEF 00,'EXCP/XDAP'
+         SVCDEF 01,'WAIT/WAITR/PRTOV'
+         SVCDEF 02,'POST'
+         SVCDEF 03,'EXIT'
+         SVCDEF 04,'GETMAIN'
+         SVCDEF 05,'FREEMAIN'
+         SVCDEF 06,'LINK/LINKX'
+         SVCDEF 07,'XCTL/XCTLX'
+         SVCDEF 08,'LOAD'
+         SVCDEF 09,'DELETE'
+         SVCDEF 0A,'GETMAIN/FREEMAIN'
+         SVCDEF 0B,'TIME'
+         SVCDEF 0C,'SYNCH/SYNCHX'
+         SVCDEF 0D,'ABEND'
+         SVCDEF 0E,'SPIE'
+         SVCDEF 0F,'ERREXCP'
+         SVCDEF 10,'PURGE'
+         SVCDEF 11,'RESTORE'
+         SVCDEF 12,'BLDL/FIND (TYPE D)'
+         SVCDEF 13,'OPEN'
+         SVCDEF 14,'CLOSE'
+         SVCDEF 15,'STOW'
+         SVCDEF 16,'OPEN (TYPE=J)'
+         SVCDEF 17,'CLOSE (TYPE=T)'
+         SVCDEF 18,'DEVTYPE'
+         SVCDEF 19,'TRKBAL'
+         SVCDEF 1A,'CATALOG/INDEX/LOCATE'
+         SVCDEF 1B,'OBTAIN'
+         SVCDEF 1D,'SCRATCH'
+         SVCDEF 1E,'RENAME'
+         SVCDEF 1F,'FEOV'
+         SVCDEF 20,'ALLOC'
+         SVCDEF 21,'IOHALT'
+         SVCDEF 22,'MGCR/QEDIT'
+         SVCDEF 23,'WTO/WTOR'
+         SVCDEF 24,'WTL'
+         SVCDEF 25,'SEGLD/SEGWT'
+         SVCDEF 27,'LABEL'
+         SVCDEF 28,'EXTRACT'
+         SVCDEF 29,'IDENTIFY'
+         SVCDEF 2A,'ATTACH/ATTACHX'
+         SVCDEF 2B,'CIRB'
+         SVCDEF 2C,'CHAP'
+         SVCDEF 2D,'OVLYBRCH'
+         SVCDEF 2E,'TIMER'
+         SVCDEF 2F,'STIMER'
+         SVCDEF 30,'DEQ'
+         SVCDEF 33,'SNAP/SNAPX/SDUMP/SDUMPX'
+         SVCDEF 34,'RESTART'
+         SVCDEF 35,'RELEX'
+         SVCDEF 36,'DISABLE'
+         SVCDEF 37,'EOV'
+         SVCDEF 38,'ENQ/RESERVE'
+         SVCDEF 39,'FREEDBUF'
+         SVCDEF 3A,'RELBUF/REQBUF'
+         SVCDEF 3B,'OLTEP'
+         SVCDEF 3C,'STAE/STAI-ESTAE/ESTAI'
+         SVCDEF 3D,'IKJEGS6A'
+         SVCDEF 3E,'DETACH'
+         SVCDEF 3F,'CHKPT'
+         SVCDEF 40,'RDJFCB'
+         SVCDEF 42,'BTAMTEST'
+         SVCDEF 44,'SYNADF/SYNADRLS'
+         SVCDEF 45,'BSP'
+         SVCDEF 46,'GSERV'
+         SVCDEF 47,'ASGNBFR/BUFINQ/RLSEBFR'
+         SVCDEF 49,'SPAR'
+         SVCDEF 4A,'DAR'
+         SVCDEF 4B,'DQUEUE'
+         SVCDEF 4C,'IFBSTAT'
+         SVCDEF 4E,'LSPACE'
+         SVCDEF 4F,'STATUS'
+         SVCDEF 51,'SETPRT'
+         SVCDEF 53,'SMFWTM'
+         SVCDEF 54,'GRAPHICS'
+         SVCDEF 55,'DDRSWAP'
+         SVCDEF 56,'ATLAS'
+         SVCDEF 57,'DOM'
+         SVCDEF 5B,'VOLSTAT'
+         SVCDEF 5C,'TCPEXCP'
+         SVCDEF 5D,'TGET/TPUT'
+         SVCDEF 5E,'TGET/TPUT'
+         SVCDEF 5F,'SYSEVENT'
+         SVCDEF 60,'STAX'
+         SVCDEF 61,'IKJEGS9G'
+         SVCDEF 62,'PROTECT'
+         SVCDEF 63,'DYNALLOC'
+         SVCDEF 64,'IKJEFFIB'
+         SVCDEF 65,'QTIP'
+         SVCDEF 66,'AQCTL'
+         SVCDEF 67,'XLATE'
+         SVCDEF 68,'TOPCTL'
+         SVCDEF 69,'IMGLIB'
+         SVCDEF 6B,'MODESET'
+         SVCDEF 70,'PGRLSE'
+         SVCDEF 71,'PGFIX/PGFREE/PGLOAD/PGOUT'
+         SVCDEF 72,'EXCPVR'
+         SVCDEF 75,'DEBCHK'
+         SVCDEF 77,'TESTAUTH'
+         SVCDEF 78,'GETMAIN/FREEMAIN'
+         SVCDEF 79,'VSAM'
+         SVCDEF 7B,'PURGEDQ'
+         SVCDEF 7C,'TPIO'
+         SVCDEF 7D,'EVENTS'
+         SVCDEF 7E,'MSS(ICB2SVC)'
+         SVCDEF 82,'RACHECK'
+         SVCDEF 83,'RACINIT'
+         SVCDEF 84,'RACLIST'
+         SVCDEF 85,'RACDEF'
+         SVCDEF 89,'ESR'
+         SVCDEF 8A,'PGSER'
+         SVCDEF 8B,'CVAFDIR'
+         DC    X'FF'
+         SPACE 2
+         COPY  DISASMDA
+*---------------------------------------------------------------------*
+*                                                                     *
+*              COMMON DATA MAP                                        *
+*                                                                     *
+*---------------------------------------------------------------------*
+DISASM00 DISASMCM TYPE=DSECT
+*---------------------------------------------------------------------*
+*                                                                     *
+*              SVC DSECT                                              *
+*                                                                     *
+*---------------------------------------------------------------------*
+SVCDSECT DSECT
+SVCLEN   DS   X                  LENGTH OF DESCRIPTION - 1      GP99134
+SVCNBR   DS   X                  SVC NUMBER
+SVCSIZE  EQU  *-SVCDSECT         FIXED OVERHEAD                 GP99134
+SVCCMNT  DS   0C                 DESCRIPTION
+         END  DISASM09

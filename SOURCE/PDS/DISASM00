@@ -1,0 +1,17 @@
+DA00     TITLE 'DISASM00 - COMMON DATA MODULE'
+*--------------------------------------------------------------------*
+*                                                                    *
+*  Module name: DISASM00                                             *
+*                                                                    *
+*  Function:                                                         *
+*           Common data module and trace table.                      *
+*           At initialization time, the mainline module, DISASM01,   *
+*           sets R11 to the address of DISASM00.  All other          *
+*           modules depend on this address remaining unchanged.      *
+*                                                                    *
+*--------------------------------------------------------------------*
+         COPY  DISASMGB
+DISASM00 DISASMCM TYPE=CSECT
+         SPACE 1                                                GP99137
+         COPY  DISASMDA ,                                       GP99137
+         END

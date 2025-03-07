@@ -1,0 +1,436 @@
+DA01     TITLE 'DISASM01 - MAINLINE'
+         PUNCH ' ALIAS DISASM '  USE DISASMXA UNDER MVS/XA      GP05095
+*--------------------------------------------------------------------*
+*                                                                    *
+*  Module name: DISASM01                                             *
+*                                                                    *
+*  Function:                                                         *
+*   Mainline module.                                                 *
+*                                                                    *
+*     STEP                                                           *
+*       1. Set R11 to address of DISASM00 (the common module).       *
+*       2. Acquire storage for the trace table and initialize the    *
+*          control data in DISASM00.                                 *
+*       3. Scan the TIOT to determine which DDs are present.         *
+*       4. Verify required DD's are present.                         *
+*       5. Call the parameter reader module, DISASM02.               *
+*       6. Call the debug module, DISASMDB to print internal data.   *
+*       7. If errors from DISASM02, print message, go to step 21.    *
+*       8. Call the module reader, DISASM03; may in turn call        *
+*          DISASM13 (object deck), DISASM04 (ESD), DISASM05 (RLD).   *
+*       9. If errors from DISASM03, print message, go to step 21.    *
+*      10. Call DISASM06 to apply VERIFY and REPLACE statements,     *
+*          and print the wanted CSECTs text if requested or VER fails*
+*      11. Call the debug module, DISASMDB to print internal data.   *
+*      12. If errors from DISASM06, print message, go to step 21.    *
+*      13. Call assembler interface module, DISASM07 to assemble     *
+*          DSECTs and build dsect/dsect label chains.                *
+*      14. Call the debug module, DISASMDB to print internal data.   *
+*      15. If errors from DISASM07, print message, go to step 21.    *
+*      16. Call module DISASM08 to build the internal labels and     *
+*          the reference table.                                      *
+*      17. Call the debug module, DISASMDB to print internal data.   *
+*      18. If errors from DISASM08, print message, go to step 21.    *
+*      19. Call the source code generator, DISASM09.                 *
+*      20. If errors from DISASM09, print message.                   *
+*      21. Free the storage for all internal chains and the trace    *
+*          table.                                                    *
+*                                                                    *
+*--------------------------------------------------------------------*
+*                                                                    *
+*   Changes dated 14.201 were made by Tom Armstrong and Greg Price.  *
+*   DISASM03 - fixed SSI display.                            nnn14201*
+*   DISASM09 - shifted columns to allow REVOUT colorisation.         *
+*              added missing ESR SVC names.                          *
+*                                                                    *
+*--------------------------------------------------------------------*
+         PUNCH ' ENTRY DISASM01 '                               GP04234
+         PUNCH '  ORDER DISASM00(P),DISASM01,DISASM02,DISASM03' GP04234
+         SPACE 1
+         COPY  DISASMGB              COPY GLOBAL OPTIONS
+         PRINT NOGEN                 SAVE A TREE                GP10083
+DISASM01 MODHEAD LOADWK=YES  ENTRY HOUSEKEEPING                 GP99140
+* ------------------------------------------------------------------- *
+*         Initialize trace table                                      *
+* ------------------------------------------------------------------- *
+         AIF   ('&TROPT' EQ 'OFF').NOTR1
+         L     R2,TRSIZE             TRACE TABLE'S SIZE
+         LA    R0,32(,R2)            FOR BOUNDARY ROUNDING      GP99148
+         MVI   COMMPOOL,88           GET PERSISTENT STORAGE     GP10085
+         BAL   R14,GETMAIN           ACQUIRE STORAGE FOR TRACE TABLE
+         MVI   COMMPOOL,69           RESET DEFAULT              GP10085
+         ST    R1,TRADDR             SAVE TRACE TABLE ADDRESS
+         LA    R1,32(,R1)            PLUS 32
+         SRL   R1,5                  ROUND THE ADDRESS TO...
+         SLL   R1,5                  ...NEAREST MULTIPLE OF 32
+         ST    R1,TR1ST              SET FIRST TRACE ENTRY ADDRESS
+         ST    R1,TRCURR             SET CURRENT TRACE ENTRY ADDRESS
+         A     R1,TRSIZE             PLUS USED PORTION'S SIZE
+         SH    R1,COMMH32            MINUS 1 ENTRY
+         ST    R1,TRLAST             INITIALIZE LAST ENTRY ADDRESS
+         ITRACE ID=INIT,             INITIAL TRACE ENTRY               +
+               DATA1=TR1ST,          .. FIRST TRACE TABLE ENTRY ADDR   +
+               DATA2=TRLAST          .. LAST TRACE TABLE ENTRY ADDR
+.NOTR1   ANOP
+* ------------------------------------------------------------------- *
+*         Scan TIOT                                                   *
+* ------------------------------------------------------------------- *
+         USING PSA,R0                DEFINE BASE
+         L     R1,PSATNEW            MY TCB'S ADDRESS
+         USING TCB,R1                DEFINE TCB BASE
+         L     R2,TCBTIO             TIOT ADDRESS
+         USING TIOT1,R2              DEFINE BASE
+         LA    R3,TIOENTRY           FIRST TIOT ENTRY
+         DROP  R2
+         USING TIOENTRY,R3           DEFINE BASE
+         SR    R4,R4                 CLEAR FOR LENGTHS
+MAIN0010 DS    0H
+         ICM   R4,1,TIOELNGH         LENGTH OF THIS ENTRY
+         BZ    MAIN0080              END OF TABLE
+         CLC   TIOEDDNM,INDD         DISIN DD?
+         BE    MAIN0030              YES
+         CLC   TIOEDDNM,PRTDD        DISPRINT DD?
+         BE    MAIN0040              YES
+         CLC   TIOEDDNM,LIBDD        DISMOD DD?
+         BE    MAIN0050              YES
+         CLC   TIOEDDNM,ADATADD      DISADATA DD?               GP99166
+         BE    MAIN0055              YES                        GP99166
+         CLC   TIOEDDNM,LISTDD       DISLIST DD?                GP99166
+         BE    MAIN0056              YES                        GP99166
+         CLC   TIOEDDNM,PUNCHDD      DISPUNCH DD?               GP99166
+         BE    MAIN0060              YES
+         CLC   TIOEDDNM,DEBUGDD      DISDEBUG??
+         BE    MAIN0070              YES
+MAIN0020 DS    0H
+         AR    R3,R4                 NEXT TIOT ENTRY
+         B     MAIN0010              LOOP
+MAIN0030 DS    0H
+         ITRACE ID=INDD              DISIN DD FOUND
+         OI    COMMDD,$INDD          INDICATE DISIN IS PRESENT
+         B     MAIN0020
+MAIN0040 DS    0H
+         ITRACE ID=PRTDD             DISPRINT DD FOUND
+         OI    COMMDD,$PRTDD         INDICATE DISPRINT IS PRESENT
+         B     MAIN0020
+MAIN0050 DS    0H
+         ITRACE ID=MODDD             DISMOD DD FOUND
+         OI    COMMDD,$MODDD         INDICATE DISMOD IS PRESENT
+         B     MAIN0020
+MAIN0055 ICM   R0,7,TIOEFSRT    DD DUMMY?                       GP99167
+         BZ    MAIN0020         YES; IGNORE                     GP99167
+         ITRACE ID=ADATADD           DISADATA DD FOUND          GP99166
+         OI    COMMDD,$ADADD         INDICATE DISADATA PRESENT  GP99166
+         B     MAIN0020                                         GP99166
+MAIN0056 ICM   R0,7,TIOEFSRT    DD DUMMY?                       GP99167
+         BZ    MAIN0020         YES; IGNORE                     GP99167
+         ITRACE ID=LISTDD            DISLIST  DD FOUND          GP99166
+         OI    COMMDD,$LISTDD        INDICATE DISLIST  PRESENT  GP99166
+         B     MAIN0020                                         GP99166
+MAIN0060 DS    0H
+         ITRACE ID=PUNCHDD           DISPUNCH DD FOUND
+         OI    COMMDD,$PUNCHDD       INDICATE DISPUNCH IS PRESENT
+         B     MAIN0020
+MAIN0070 DS    0H
+         ITRACE ID=DEBUGDD           DISIN DD FOUND
+         OI    COMMDD,$DEBUGDD       INDICATE DISDEBUG IS PRESENT
+         B     MAIN0020
+* ------------------------------------------------------------------- *
+*         Determine DD'S present                                      *
+* ------------------------------------------------------------------- *
+MAIN0080 DS    0H
+         TM    COMMDD,$PRTDD         WAS PRINT DD FOUND?
+         BO    MAIN0090              YES
+         WTO   'DISPRINT DD STATEMENT MISSING, EXECUTION ABORTED'
+         OI    COMMFLAG,$ABORT+$ERROR SET FLAGS
+         B     EXIT0000              AND EXIT
+MAIN0090 DS    0H
+         MVI   PRTCMD,$PRTHEAD       SET COMMAND
+         LA    R1,PRTBLOK            PRINT INTERFACE BLOCK ADDRESS
+         L     R15,APR               PRINT MODULE ENTRY POINT
+         BALR  R14,R15               LINK TO PRINT MODULE
+         TM    COMMDD,$INDD          IS DISIN DD PRESENT?
+         BO    MAIN0100              YES
+         TM    COMMDD,$ADADD+$LISTDD  ADATA OR LIST FUNCTION ?  GP99167
+         BNZ   MAIN0100      WORKS CORRECTLY WITHOUT OPTIONS    GP99167
+         MVC   PRTDATA(EMSG01L),EMSG01
+         OI    COMMFLAG,$ABORT+$ERROR SET FLAGS
+         BAL   R14,PRINTREC          PRINT MESSAGE              GP99138
+MAIN0100 DS    0H
+         TM    COMMDD,$MODDD         DISMOD DD PRESENT?
+         BO    MAIN0110              YES
+         TM    COMMDD,$LISTDD+$ADADD  CREATE SOURCE FROM ADATA/LIST?
+         BNZ   MAIN0110                                         GP99166
+         MVC   PRTDATA(EMSG02L),EMSG02
+         OI    COMMFLAG,$ABORT+$ERROR SET FLAGS
+         BAL   R14,PRINTREC          PRINT MESSAGE              GP99138
+MAIN0110 DS    0H
+         TM    COMMDD,$PUNCHDD       DISPUNCH DD PRESENT?
+         BO    MAIN0120              YES
+         MVC   PRTDATA(MSG01L),MSG01 SET MESSAGE
+         BAL   R14,PRINTREC          PRINT MESSAGE              GP99138
+MAIN0120 DS    0H
+         TM    COMMFLAG,$ABORT       ABORT FLAG SET?
+         BO    EXITTRCE              YES, EXIT AFTER TRACE      GP99138
+* ------------------------------------------------------------------- *
+*         Call parameter reader                                       *
+* ------------------------------------------------------------------- *
+         L     R15,A02               PARAMETER READER ENTRY POINT
+         BALR  R14,R15               LINK TO PARAMETER CONVERTER
+         MVC   COMMDBSH,A02SUB       SET SUBHEADING
+         BAL   R10,DEBUG000          CALL DEBUG
+         TM    COMMFLAG,$ABORT       SERIOUS ERROR?
+         BNO   MAIN0122              NO                         GP99166
+         MVI   PRTCC,C'0'    DOUBLE-SPACE                       GP99184
+         MVC   PRTDATA(EMSG03L),EMSG03 SET MESSAGE
+         BAL   R14,PRINTREC          PRINT MESSAGE              GP99138
+         B     EXITTRCE              AND EXIT                   GP99138
+* ------------------------------------------------------------------- *
+*         CALL SYSADATA PROCESSOR                                     *
+* ------------------------------------------------------------------- *
+MAIN0122 TM    COMMDD,$ADADD   WANTED?                          GP99166
+         BZ    MAIN0124        NO                               GP99166
+         ITRACE ID=CALLADT           TRACE LINK TO MODULE 03    GP99166
+         L     R15,=V(DISASMDT)      SYSADATA READER ENTRY POINT
+         BALR  R14,R15               LINK TO MODULE READER      GP99166
+         TM    COMMFLAG,$ABORT       SERIOUS ERROR?             GP99166
+         BNO   MAINDONE              NO                         GP99166
+         LA    R1,EMSG04A                                       GP99166
+         BAL   R14,PRINTMSG          PRINT MESSAGE              GP99166
+         B     EXITTRCE              AND EXIT                   GP99166
+* ------------------------------------------------------------------- *
+*         CALL SYSPRINT PROCESSOR (READ FROM DISLIST)                 *
+* ------------------------------------------------------------------- *
+MAIN0124 TM    COMMDD,$LISTDD  WANTED?                          GP99166
+         BZ    MAIN0130        NO                               GP99166
+         ITRACE ID=CALLALS           TRACE LINK TO MODULE 03    GP99166
+         L     R15,=V(DISASMLS)      LISTING READER ENTRY POINT GP99166
+         BALR  R14,R15               LINK TO MODULE READER      GP99166
+         TM    COMMFLAG,$ABORT       SERIOUS ERROR?             GP99166
+         BNO   MAINDONE              NO                         GP99166
+         LA    R1,EMSG04L                                       GP99166
+         BAL   R14,PRINTMSG          PRINT MESSAGE              GP99166
+         B     EXITTRCE              AND EXIT                   GP99166
+* ------------------------------------------------------------------- *
+*         Call object module reader                                   *
+* ------------------------------------------------------------------- *
+MAIN0130 L     R0,=A($IOSIZE)                                   GP99140
+         ICM   R0,8,=AL1(88)         GET PERSISTENT STORAGE     GP10085
+         GETMAIN R,LV=(0)    BSAM I/O AREA - BELOW THE LINE     GP99148
+         ST    R1,COMMIO             SET ADDRESS IN COMM AREA
+         ITRACE ID=CALLA03           TRACE LINK TO MODULE 03
+         L     R15,A03               MODULE READER ENTRY POINT
+         BALR  R14,R15               LINK TO MODULE READER
+         TM    COMMFLAG,$ABORT       SERIOUS ERROR?
+         BNO   MAIND140              NO                         GP10025
+         LA    R1,EMSG04                                        GP99166
+         BAL   R14,PRINTMSG          PRINT MESSAGE              GP99166
+         B     EXITTRCE              AND EXIT                   GP99138
+* ------------------------------------------------------------------- *
+*    Validate control block addresses against CSECT size              *
+* ------------------------------------------------------------------- *
+MAIND140 LA    R2,COMMDATA   POINT TO THE DATA CHAIN            GP10025
+         USING DATADSCT,R2                                      GP10025
+MAIND142 LR    R1,R2              SAE PRIOR ADDRESS             GP10025
+MAIND143 ICM   R2,15,DATANEXT     GET NEXT ELEMENT              GP10025
+         BZ    MAIN0140           ALL DONE                      GP10025
+         CLC   DATABEGN,COMMCSEA  BEGIN AFTER MODULE ?          GP10025
+         BL    MAIND145                                         GP10025
+         MVC   DATANEXT-DATANEXT(4,R1),0(R2)     UNCHAIN        GP10025
+         B     MAIND143           AND TRY NEXT ONE              GP10025
+MAIND145 CLC   DATAEND,COMMCSEA   END AFTER MODULE ?            GP10025
+         BNH   MAIND142           OK                            GP10025
+         MVC   DATAEND,COMMCSEA   TRUNCATE                      GP10025
+         B     MAIND142           AND CONTINUE                  GP10025
+         DROP  R2                                               GP10025
+* ------------------------------------------------------------------- *
+*         Call object text printer; check VER, apply REPs             *
+* ------------------------------------------------------------------- *
+MAIN0140 DS    0H
+         L     R15,A06               MODULE TEXT PRINTER ENTRY POINT
+         BALR  R14,R15               LINK TO TEXT PRINTER
+         MVC   COMMDBSH,A06SUB       SET SUBHEADING
+         BAL   R10,DEBUG000          CALL DEBUG
+         TM    COMMFLAG,$ABORT       SERIOUS ERROR?
+         BNO   MAIN0150              NO
+         MVC   PRTDATA(EMSG05L),EMSG05 SET MESSAGE
+         BAL   R14,PRINTREC          PRINT MESSAGE              GP99138
+         B     EXITTRCE              AND EXIT                   GP99138
+* ------------------------------------------------------------------- *
+*                                                                     *
+*         Call the assembler interface to assemble dsects and build   *
+*         the dsect/dsect label chains.                               *
+*                                                                     *
+* ------------------------------------------------------------------- *
+MAIN0150 TM    COMMFLAG,$ASMIN       ANY ASSEMBLER INPUT?       \
+         BNO   MAIN0160              NO; SKIP TRACE, ETC.       \
+         L     R15,A07               DSECT INTERPRETER ENTRY POINT
+         BALR  R14,R15               LINK TO DSECT INTERPRETER
+         MVC   COMMDBSH,A07SUB       SET SUBHEADING
+         BAL   R10,DEBUG000          CALL DEBUG
+         TM    COMMFLAG,$ABORT       SERIOUS ERROR?
+         BNO   MAIN0160              NO
+         MVC   PRTDATA(EMSG06L),EMSG06 SET MESSAGE
+         BAL   R14,PRINTREC          PRINT MESSAGE              GP99138
+         B     EXITTRCE              AND EXIT                   GP99138
+* ------------------------------------------------------------------- *
+*                                                                     *
+*         Call internal label and reference table generator.          *
+*                                                                     *
+* ------------------------------------------------------------------- *
+MAIN0160 DS    0H
+         ITRACE ID=CALL08            CALLING LABEL TABLE GENERATOR
+         L     R15,A08               LABEL GENERATOR ENTRY POINT
+         BALR  R14,R15               LINK TO LABEL GENERATOR
+         MVC   COMMDBSH,A08SUB       SET SUBHEADING
+         BAL   R10,DEBUG000          CALL DEBUG
+         TM    COMMFLAG,$ERROR       ANY ERRORS?
+         BNO   MAIN0170              NO
+         MVC   PRTDATA(EMSG07L),EMSG07
+         BAL   R14,PRINTREC          PRINT MESSAGE              GP99138
+         B     EXITTRCE              AND EXIT                   GP99138
+* ------------------------------------------------------------------- *
+*    PRODUCE SOURCE ON PRINT/PUNCH                                    *
+* ------------------------------------------------------------------- *
+MAIN0170 DS    0H
+         ITRACE ID=CALL09            CALLING SOURCE GENERATOR
+         L     R15,A09               SOURCE GENERATOR ENTRY POINT
+         BALR  R14,R15               LINK TO SOURCE GENERATOR
+         TM    COMMFLAG,$ERROR       ANY ERRORS?
+         BO    MAIN0180              YES
+         TM    PRINTFG2,$PFXRF  DOING CROSS-REFERENCE?          GP99184
+         BZ    MAINDONE      NO; FINISHED                       GP99184
+* ------------------------------------------------------------------- *
+*    CROSS REFERENCE LISTING                                          *
+* ------------------------------------------------------------------- *
+         MVC   COMMDBSH,A09SUB       SET SUBHEADING             GP99184
+         BAL   R10,DEBUG000          CALL DEBUG                 GP99184
+         L     R15,=V(DISASM19)  GET CROSS-REFERENCE ROUTINE    GP99184
+         BALR  R14,R15       AND INVOKE IT                      GP99184
+MAINDONE ITRACE ID=SUCCESS                                      GP99166
+         MVC   PRTDATA(MSG03L),MSG03 SET FINAL MESSAGE
+         BAL   R14,PRINTREC          PRINT FINAL MESSAGE        GP99138
+         B     EXIT0000              AND EXIT
+MAIN0180 DS    0H
+         MVC   PRTDATA(EMSG08L),EMSG08
+         BAL   R14,PRINTREC          PRINT MESSAGE              GP99138
+EXITTRCE BAL   R14,TRACEPRT  PRINT TRACE TABLE                  GP99138
+         B     EXIT0000              AND EXIT
+* ------------------------------------------------------------------- *
+*        Link to DEBUG module                                         *
+* ------------------------------------------------------------------- *
+DEBUG000 DS    0H
+         MVI   DBUGCMD,$DBUG         NORMAL DEBUG
+         LA    R1,DBUGBLOK           PARAMETER BLOCK ADDRESS
+         L     R15,ADB               DEBUG MODULE ENTRY POINT
+         BALR  R14,R15               LINK TO DEBUG MODULE
+         BR    R10                   RETURN
+EXIT0000 DS    0H
+         TM    COMMFLAG,$ABEND       ABEND REQUESTED?
+         BNO   EXIT0010              NO
+         BAL   R14,TRACEPRT  PRINT TRACE TABLE                  GP10019
+         ITRACE ID=ABEND
+         MVC   PRTDATA(MSG02L),MSG02 SET MESSAGE
+         BAL   R14,PRINTREC          PRINT MESSAGE              GP99138
+         LA    R1,ABEND001   SET ABEND CODE (NOT ADDRESS)       GP99146
+         ABEND (1),DUMP,,USER   GIVE 'EM WHAT THEY ASKED FOR    GP99146
+EXIT0010 FREEMAIN R,SP=69            FREE ALL CSECT STORAGE     GP10085
+         XC    COMMCLR(COMMCLRL),COMMCLR  SIGNAL RELEASE        GP10085
+EXIT0020 ICM   R1,15,COMMIO          I/O BUFFER ADDRESS
+         BZ    EXIT0100              NO BUFFER                  GP10085
+         ITRACE FREEIO,              FREEING I/O STORAGE               +
+               RDATA1=R1             .. I/O AREA'S ADDRESS
+         L     R0,=A($IOSIZE)                                   GP99140
+         MVI   COMMPOOL,88           SET CORRECT SUBPOOL        GP10085
+         BAL   R14,FREEMAIN          RELEASE THE STORAGE        GP99148
+         SPACE 1                                                GP99153
+EXIT0100 MVI   PRTCMD,$PRTCLS     CLOSE THE PRINTER             GP10085
+         BAL   R14,PRINTDAT         CLOSE REQUEST               GP10048
+         MVI   PUNCMD,$PUNCLS     CLOSE THE PUNCH               GP10048
+         BAL   R14,PUNCHDAT         CLOSE REQUEST               GP10048
+         SR    R15,R15               GIVE GOOD RETURN CODE      GP99153
+         TM    COMMFLAG,$ERROR       ANY ERRORS?                GP99153
+         BZ    EXIT0250              YES                        GP99153
+         LA    R15,8         SET ERROR IN EXECUTION             GP99153
+EXIT0250 TM    COMMFLAG,$ABORT       ANY ERRORS?                GP99153
+         BZ    EXIT0260              YES                        GP99153
+         LA    R15,12        SET ERROR IN EXECUTION             GP99153
+         SPACE 1                                                GP99153
+EXIT0260 L     R13,4(,R13)           RESTORE REGISTER 13        GP99153
+         L     R14,12(R13)   RESTORE RETURN REGISTER            GP99153
+         LM    R0,R12,20(R13)   RESTORE ALL OTHER REGISTERS     GP99153
+         BR    R14                   RETURN TO CALLER
+*---------------------------------------------------------------------*
+*                                                                     *
+*              WORK AREAS                                             *
+*                                                                     *
+*---------------------------------------------------------------------*
+V00      DC    V(DISASM00)           COMMON MODULE'S ADDRESS
+INDD     DC    CL8'DISIN'
+PRTDD    DC    CL8'DISPRINT'
+LIBDD    DC    CL8'DISMOD'
+PUNCHDD  DC    CL8'DISPUNCH'
+DEBUGDD  DC    CL8'DISDEBUG'
+ADATADD  DC    CL8'DISADATA'                                    GP99166
+LISTDD   DC    CL8'DISLIST'                                     GP99166
+A02SUB   DC    CL35'INTERNAL DATA AFTER MODULE DISASM02'
+A06SUB   DC    CL35'INTERNAL DATA AFTER MODULE DISASM06'
+A07SUB   DC    CL35'INTERNAL DATA AFTER MODULE DISASM07'
+A08SUB   DC    CL35'INTERNAL DATA AFTER MODULE DISASM08'
+A09SUB   DC    CL35'INTERNAL DATA AFTER MODULE DISASM09'        GP99184
+MSG01    DC    C'DISASM0101I NO DISPUNCH DD PRESENT, NO SOURCE WILL BE +
+               GENERATED'
+MSG01L   EQU   *-MSG01
+MSG02    DC    C'DISASM0102I ABEND REQUESTED, PROGRAM ABNORMALLY TERMIN+
+               ATING'
+MSG02L   EQU   *-MSG02
+MSG03    DC    C'DISASM0103I ******* DISASSEMBLY COMPLETE ******'
+MSG03L   EQU   *-MSG03
+EMSG01   DC    C'DISASM0104E DISIN DD STATEMENT MISSING, PROCESSING WIL+
+               L BE ABORTED'
+EMSG01L  EQU   *-EMSG01
+EMSG02   DC    C'DISASM0105E DISMOD DD STATEMENT MISSING, PROCESSING WI+
+               LL BE ABORTED'
+EMSG02L  EQU   *-EMSG02
+EMSG03   DC    C'DISASM0106E ERROR(S) IN CONTROL PARAMETERS, EXECUTION +
+               ABORTED'
+EMSG03L  EQU   *-EMSG03
+EMSG04   DC    AL1(L'EMSG04T)
+EMSG04T  DC    C'DISASM0107E ERROR(S) IN LOADING OBJECT MODULE, EXECUTI+
+               ON ABORTED'
+EMSG04A  DC    AL1(L'EMSG04AT)                                  GP99166
+EMSG04AT DC    C'DISASM0112E ERROR(S) PROCESSING DISADATA INPUT'
+EMSG04L  DC    AL1(L'EMSG04LT)                                  GP99166
+EMSG04LT DC    C'DISASM0113E ERROR(S) PROCESSING DISLIST INPUT' GP99166
+EMSG05   DC    C'DISASM0108E ERROR(S) IN TEXT VERIFY/REPLACE/PRINT'
+EMSG05L  EQU   *-EMSG05
+EMSG06   DC    C'DISASM0109E ERROR(S) IN ASSEMBLING DSECTS, EXECUTION A+
+               BORTED'
+EMSG06L  EQU   *-EMSG06
+EMSG07   DC    C'DISASM0110E ERROR(S) IN GENERATING LABEL TABLE, EXECUT+
+               ION ABORTED'
+EMSG07L  EQU   *-EMSG07
+EMSG08   DC    C'DISASM0111E ERROR(S) IN GENERATING SOURCE, EXECUTION A+
+               BORTED'
+EMSG08L  EQU   *-EMSG08
+*---------------------------------------------------------------------*
+*                                                                     *
+*              DEBUG MODULE INTERFACE BLOCK                           *
+*                                                                     *
+*---------------------------------------------------------------------*
+DBUGBLOK DBUGBLOK TYPE=CSECT
+         SPACE 2
+         LTORG
+         SPACE 2
+*---------------------------------------------------------------------*
+*                                                                     *
+*              COMMON DATA MAP                                        *
+*                                                                     *
+*---------------------------------------------------------------------*
+DISASM00 DISASMCM TYPE=DSECT
+         COPY  DISASMDA
+         SPACE 2                                                GP99132
+         IHAPSA ,
+         IKJTCB LIST=NO
+SECTTIOT DSECT ,                                                GP99127
+         IEFTIOT1
+         END   DISASM01

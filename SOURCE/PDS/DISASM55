@@ -1,0 +1,602 @@
+DA55     TITLE 'DISASM55 - EXTRACT LABELS FROM SYMBOL TABLE'
+         MACRO
+&NM      INHEX &OUT,&IN,&MAKE=COMMDWRD
+         LCLC  &L
+&L       SETC  'L'''
+&NM      UNPK  &OUT.(&L&OUT+1),&IN.(&L&IN+1)
+         TR    &OUT,COMMHXTR
+         MVI   &OUT+&L&OUT,C' '
+         MEND
+         SPACE 1
+         COPY   DISASMGB
+         SPACE 1
+*--------------------------------------------------------------------*
+*                                                                    *
+*  Module name: DISASM55                                             *
+*                                                                    *
+*  Function:                                                         *
+*  BUILD LABEL AND DATA INFORMATION FROM LOAD MODULE'S SYMBOL TABLE  *
+*                                                                    *
+*--------------------------------------------------------------------*
+*                                                                    *
+*  This module loops through the SYMbol table entries read and saved *
+*  by DISASM03. Data are ignored unless:                             *
+*                                                                    *
+*    1) CSECT entry that matches requested CSECT, then:              *
+*       a) Label entries are built and chained off COMMLABL          *
+*       b) Data entries are built and chained off COMMDATA. Overlap- *
+*          ping entries are possible (DISASM08 will handle these).   *
+*                                                                    *
+*    2) DSECT/COMMON entries cause a DSCT entry to be built.         *
+*       a) Label entries are built and chained off DSCTLABL          *
+*                                                                    *
+*  Other entries are ignored.                                        *
+*                                                                    *
+*--------------------------------------------------------------------*
+         SPACE 1
+DISASM55 MODHEAD BASE=R12         ENTRY HOUSEKEEPING
+         ITRACE ID=ENTRY
+         XC    WORKAREA(WORKLEN),WORKAREA
+         TM    PRINTFG1,$PFSYM       PRINT SYMBOL TABLE OUTPUT?
+         BZ    SKIPSUB               NO
+         MVC   COMMSUBH(SUBHEADL),SUBHEAD
+         LA    R1,SUBHEADL           SUBHEADING LENGTH
+         STH   R1,COMMSUBL           SET LENGTH
+         MVI   COMMSUBL,X'FF'        SET NON-CENTERED INDICATOR
+         OI    LOCFLAG,$SUBH         SET FLAG
+         MVI   PRTCMD,$PRTHEAD       SET COMMAND
+         BAL   R14,PRINTDAT          PRINT SUBHEADER
+SKIPSUB  ICM   R10,15,COMMSYMP  GET SYMBOL CHAIN POINTER
+         BZ    EXIT000       CALLER'S ERROR
+         SPACE 1
+         USING SYMDATA,R10   DECLARE ENTRY
+         SR    R6,R6         GET SIZE LOADED
+CARDLOOP CH    R6,=AL2(L'WORK)  TIME TO GET ANOTHER CARD?
+         BNL   DOCURR        NO
+         TM    LOCFLAG,$EOD  END OF DATA?
+         BNZ   DOCURR        YES; CHECK FOR END OF PROCESSING
+CARDGET  LA    R14,WORK(R6)  GET DESTINATION FOR APPENDED DATA
+         LH    R15,SYMRLEN   GET LENGTH
+         BCTR  R15,0         SET FOR EXECUTE
+         EX    R15,EXMVCTXT  MOVE SYMBOL TEXT
+         LA    R6,1(R15,R6)  SET NEW SIZE
+         ICM   R10,15,SYMNEXT  GET NEXT ENTRY
+         BNZ   DOCURR        HAVE ONE; PROCESS CURRENT
+         OI    LOCFLAG,$EOD  SHOW NO MORE ON CHAIN
+DOCURR   LTR   R6,R6         ANY MORE TO DO?
+         BNP   EXIT000       ALL DONE
+         SPACE 1
+         TM    PRINTFG2,$PFBUG  DEBUG MODE?
+         BZ    SKIPBUG
+         PUSH  USING
+         LA    R14,PRTDATA   *****POINT TO OUTPUT
+         LA    R15,WORK      *****POINT TO INPUT
+         LA    R0,6          *****UNPACK 6 WORDS
+         USING OUTHEXD,R14
+         USING INPHEXD,R15
+HEXLINE  INHEX OUTHEX,INPHEX
+         LA    R14,9(,R14)
+         LA    R15,4(,R15)
+         BCT   R0,HEXLINE
+         BAL   R14,PRINTREC
+         POP   USING
+         SPACE 1
+SKIPBUG  LA    R4,WORK       START LOADING WORK BUFFER
+         USING RSYMDATA,R4   DECLARE FIXED PORTION
+         LA    R5,4(,R4)     SET FOR FIXED OVERHEAD
+         USING MSYMDATA,R5   DECLARE MOVEABLE DATA
+         XC    CURRZERO,CURRZERO  CLEAR                         GP99169
+         MVI   CURRDUPE+L'CURRDUPE-1,1  DEFAULT OCCURRENCE COUNT
+         MVC   CURROFF+1(L'RSYMOFF),RSYMOFF  SAVE DISPLACEMENT
+         MVC   OUTSECT,#DSECT  SET CURRENT SECTION
+         INHEX OUTORG,RSYMORG  FORMAT ORGANIZATION IN HEX
+         INHEX OUTOFF,RSYMOFF  FORMAT OFFSET IN HEX
+         TM    RSYMORG,$RSNAME  IS THERE A NAME FIELD?
+         BNZ   NONAME        NO
+         IC    R15,RSYMORG   GET LENGTH BITS
+         N     R15,=X'00000007'  ISOLATE THEM
+         MVC   CURRLBL,COMMBLKS  CLEAR UNUSED BYTES
+         EX    R15,EXMVCNAM  MOVE NAME
+         MVC   OUTLBL,CURRLBL  ALSO PRINT LABEL
+         MVC   CURRDISP,CURROFF  SAVE OFFSET FOR LABEL          GP99161
+         LA    R5,1(R15,R5)  POINT PAST NAME
+NONAME   TM    RSYMORG,$RSDC  DC DEFINITION ?
+         BNZ   DODCDATA      YES
+*---------------------------------------------------------------------*
+*                                                                     *
+*     NON-DATA TYPE                                                   *
+*                                                                     *
+*---------------------------------------------------------------------*
+         IC    R15,RSYMORG
+         N     R15,=X'00000070'  ISOLATE NON-DATA TYPE
+         SRL   R15,4         UNITIZE
+         MH    R15,=AL2(ORGTAB-ORGTABDC)
+         LA    R14,ORGTAB(R15)  POINT TO TABLE ENTRY
+         MVC   OUTOPR,0(R14)    SHOW TYPE
+         LH    R15,8(,R14)   GET PROCESSING OFFSET
+         B     DISASM55(R15)  INVOKE PROCESSING CODE
+         SPACE 1
+NEXTCARD LA    R15,PRINTREC  SET TO PRINT IT
+         TM    PRINTFG1,$PFSYM  PRINT SYMBOL DATA ?
+         BNZ   NEXTCART      YES
+         LA    R15,PRINTCLR  ELSE JUST CLEAR THE PRINT LINE
+NEXTCART BALR  R14,R15       PRINT OR CLEAR IT
+         MVC   WORK(2*L'WORK),0(R5)  MOVE NEXT
+         LA    R6,WORK(R6)
+         SLR   R6,R5         UPDATE REMAINING LENGTH
+         B     CARDLOOP
+         SPACE 1
+ORGTABDC DC    CL8'DC      ',AL2(DODCDATA-DISASM55)   -1
+ORGTAB   DC    CL8'DS      ',AL2(DODSDATA-DISASM55)    0
+         DC    CL8'CSECT   ',AL2(DODCSECT-DISASM55)    1
+         DC    CL8'DSECT   ',AL2(DODDSECT-DISASM55)    2
+         DC    CL8'COMMON  ',AL2(DODDSCOM-DISASM55)    3
+         DC    CL8'INST    ',AL2(DOOPCODE-DISASM55)    4
+         DC    CL8'CCW     ',AL2(DOCCWDAT-DISASM55)    5
+         DC    CL8'EQU/ORG ',AL2(TESTLABL-DISASM55)    6
+         DC    CL8'?TYPE 7?',AL2(NEXTCARD-DISASM55)    7
+         SPACE 1
+*---------------------------------------------------------------------*
+*                                                                     *
+*     CSECT DEFINITION                                                *
+*                                                                     *
+*---------------------------------------------------------------------*
+DODCSECT NI    LOCFLAG,255-$LFCSECT-$LFDSECT RESET ALL SECT FLAGS
+         MVC   OUTSECT,CURRLBL  UPDATE CURRENT LINE'S SECTION
+         XC    @DSECT,@DSECT   NO DSECT BLOCK ACTIVE
+         XC    @LABELS,@LABELS  NO LABELS, EITHER
+         CLC   CURRLBL,COMMCSNM  DESIRED SECTION ?
+         BNE   NEXTCARD      NO; FLUSH UNTIL NEXT CSECT/DSECT/COMMON
+         MVC   #DSECT,CURRLBL  SET CSECT NAME
+         OI    LOCFLAG,$LFCSECT SET CSECT
+         LA    R0,COMMLABL   POINT TO LABEL ANCHOR
+         ST    R0,@LABELS    SAVE IT
+         B     NEXTCARD      GO FOR MORE
+         SPACE 1
+*---------------------------------------------------------------------*
+*                                                                     *
+*     DSECT/COMMON DEFINITION                                         *
+*                                                                     *
+*---------------------------------------------------------------------*
+         PUSH  USING
+DODDSCOM DS    0H
+DODDSECT NI    LOCFLAG,255-$LFCSECT-$LFDSECT RESET ALL SECT FLAGS
+         MVC   OUTSECT,CURRLBL  UPDATE CURRENT LINE'S SECTION
+         MVC   #DSECT,CURRLBL  SET DSECT NAME
+         SPACE 1
+         LA    R3,COMMUSNG   POINT TO USING CHAIN
+         USING USNGDSCT,R3   DECLARE MAPPING
+DODDFIND ICM   R3,15,USNGNEXT  ANOTHER?
+         BZ    NEXTCARD      NO; SKIP ALL ENTRIES FOR THIS DSECT
+         CLC   CURRLBL,USNGDSNM  MATCHING NAME?
+         BNE   DODDFIND      NO; TRY NEXT
+         OI    LOCFLAG,$LFDSECT SET DSECT
+         SPACE 1
+MAKESECT LA    R3,COMMDSCT
+         USING DSCTDSCT,R3   DECLARE IT
+MSECFIND LR    R2,R3         SET LINK ORIGIN
+         ICM   R3,15,DSCTNEXT   FOUND ?
+         BZ    MSECMAKE      NO; MAKE ONE
+         CLC   DSCTNAME,#DSECT  REQUESTED ENTRY?
+         BNE   MSECFIND      NO; CONTINUE SEARCH
+         ST    R3,@DSECT     SET POINTER
+         LA    R0,DSCTLBA    SET HEAD OF CHAIN
+         ST    R0,@LABELS    AND SAVE IT
+         B     NEXTCARD      GET ANOTHER CARD
+MSECMAKE LA    R0,DSCTL
+         BAL   R14,GETMAIN   GET ANOTHER BLOCK
+         ST    R1,DSCTNEXT-DSCTDSCT(,R2)   CHAIN AT END
+         DROP  R3
+         USING DSCTDSCT,R1
+         MVC   DSCTNAME,#DSECT  SET NAME
+         ST    R1,@DSECT     SET POINTER
+         LA    R0,DSCTLBA    SET HEAD OF CHAIN
+         ST    R0,@LABELS    AND SAVE IT
+         B     NEXTCARD      GET ANOTHER CARD
+         POP   USING
+         SPACE 1
+*---------------------------------------------------------------------*
+*                                                                     *
+*     CCW DEFINITION                                                  *
+*                                                                     *
+*---------------------------------------------------------------------*
+DOCCWDAT TM    LOCFLAG,$LFCSECT+$LFDSECT  WANTED ?
+         BZ    NEXTCARD      NO; SKIP UNTIL CSECT OR DSECT
+         MVI   CURRTYPE,C'8'  SET CODE FOR CCW                  GP99169
+         LA    R1,8          SET CCW LENGTH
+         B     DODSCCW       GO TO COMMON DS PROCESSING
+         SPACE 1
+*---------------------------------------------------------------------*
+*                                                                     *
+*     INSTRUCTION OP-CODE PROCESSING                                  *
+*                                                                     *
+*---------------------------------------------------------------------*
+DOOPCODE TM    LOCFLAG,$LFCSECT+$LFDSECT  WANTED ?
+         BZ    NEXTCARD      NO; SKIP UNTIL CSECT OR DSECT
+         L     R1,CURROFF    GET CURRENT OFFSET
+         AL    R1,COMMTXT    PLUS LOADED BASE
+         BAL   R14,GETOPENT  GET TARGET INSTRUCTION
+           B   NEXTCARD      NOT A VALID OPCODE ????
+         MVC   OUTOPR+2(6),0(R15)  COPY INSTRUCTION MNEMONIC
+         MVI   OUTOPR+1,C' ' SEPARATE
+         ST    R0,CURRLEN    SET LENGTH
+         ST    R0,CURRSIZE   SET TOTAL LENGTH
+         CVD   R0,COMMDWRD   MAKE PACKED
+         MVC   OUTLEN,=X'2020202120'
+         ED    OUTLEN-1(L'OUTLEN+1),COMMDWRD+5  SHOW LENGTH
+         MVI   CURRTYPE,C'2' INDICATE INSTRUCTION (LENGTH?)     GP99169
+         B     TESTLABL      GO TO ADD THE LABEL
+         SPACE 1
+*---------------------------------------------------------------------*
+*                                                                     *
+*     DS VARIABLE                                                     *
+*                                                                     *
+*---------------------------------------------------------------------*
+DODSDATA SR    R1,R1
+         IC    R1,0(,R5)     GET LENGTH
+         LA    R5,1(,R5)     NEW SPACING
+DODSCCW  TM    LOCFLAG,$LFCSECT+$LFDSECT  WANTED ?
+         BZ    NEXTCARD      NO; SKIP UNTIL CSECT OR DSECT
+         ST    R1,CURRLEN    SET LENGTH
+         ST    R1,CURRSIZE   SET TOTAL LENGTH
+         CVD   R1,COMMDWRD   MAKE PACKED
+         MVC   OUTLEN,=X'2020202120'
+         ED    OUTLEN-1(L'OUTLEN+1),COMMDWRD+5  SHOW LENGTH
+         MVI   CURRTYPE,C'X' INDICATE UNKNOWN FORMAT            GP99169
+         B     TESTDATA
+         SPACE 1
+*---------------------------------------------------------------------*
+*                                                                     *
+*     DC VARIABLE                                                     *
+*                                                                     *
+*---------------------------------------------------------------------*
+DODCDATA INHEX OUTTYP,MSYMTYPE
+         MVC   OUTOPR,ORGTABDC
+         SR    R1,R1         CLEAR FOR TYPING
+         IC    R1,MSYMTYPE
+         SRL   R1,2          CONVERT TO 1-BYTE OFFSETS
+         IC    R15,TYPTAB(R1)  GET TYPE
+         STC   R15,OUTTYPE   SHOW IT OFF
+         STC   R15,CURRTYPE  SAVE FOR DATA BLOCK                GP99169
+         IC    R1,LENTAB(R1) GET MATCHING LENGTH LENGTH
+         LTR   R1,R1         ONE OR TWO (0, 1)
+         BZ    DODCLEN1      0 - LENGTH = 1
+         ICM   R1,3,MSYMLEN  GET ITEM LENGTH
+         LA    R5,1(,R5)     SKIP ONE EXTRA
+         B     DODCLENC      FORMAT IT
+DODCLEN1 IC    R1,MSYMLEN    GET LENGTH
+DODCLENC LA    R5,2(,R5)     SKIP TYPE AND LENGTH
+         LA    R1,1(,R1)     CORRECT FOR BIAS
+         ST    R1,CURRLEN    SET LENGTH
+         ST    R1,CURRSIZE   SET TOTAL LENGTH
+         CVD   R1,COMMDWRD   MAKE PACKED
+         MVC   OUTLEN,=X'2020202120'
+         ED    OUTLEN-1(L'OUTLEN+1),COMMDWRD+5  SHOW LENGTH
+         TM    RSYMORG,$RSMUL  MULT. FACTOR?
+         BZ    DODCNOMF      NO
+         SR    R1,R1
+         ICM   R1,7,MSYMMUL    LOAD IT
+         CVD   R1,COMMDWRD   PACK
+         ST    R1,CURRDUPE   SAVE FOR DATA BLOCK                GP99169
+         SR    R0,R0         CLEAR FOR M
+         M     R0,CURRLEN    TIMES ITEM LENGTH
+         ST    R1,CURRSIZE   SAVE TOTAL SIZE REQUIRED
+         MVC   OUTMUL,=X'202020202020202120'
+         ED    OUTMUL-1(L'OUTMUL+1),COMMDWRD+3
+         LA    R5,L'MSYMMUL(,R5)  SKIP OVER
+         CLC   =F'1',CURRDUPE  IS MULT. FACTOR = 1 ?            GP99183
+         BNE   DODCNOMF                                         GP99183
+*  I FOUND THAT P'123,456' GENERATES 3 SYM ENTRIES. ONE WITH LENGH OF
+*   FOUR AND A MULT.FACT OF 1 (AND ANY LABEL), REST PLAIN PL2 ENTRIES.
+         CLC   1(3,R5),CURROFF+1  NEXT ENTRY SAME DISPLACEMENT? GP99183
+         BE    TESTLABL      YES; ONLY DO LABEL FROM THIS ONE   GP99183
+DODCNOMF TM    RSYMORG,$RSSCL  SCALE FACTOR?
+         BZ    DODCNOSC      NO
+         SR    R1,R1
+         ICM   R1,3,MSYMSCL    LOAD IT
+         CVD   R1,COMMDWRD   PACK
+         MVC   OUTSCL,=X'2020202120'
+         ED    OUTSCL-1(L'OUTMUL+1),COMMDWRD+5
+         LA    R5,L'MSYMSCL(,R5)  SKIP OVER
+**********************************************************************
+*   TEMP PATCH - I'M GETTING A (FALSE?) DATA RECORD IN THE MIDDLE OF
+*   OF CODE. UNTI i FIGURE IT OUT, DISCARD IT                   GP10047
+DODCNOSC CLI   RSYMORG,X'88'      PART 1 MATCHES?               GP10047
+         BNE   DODCNO2       NO; TRY ALTERNATE                  GP10049
+         CLC   =X'040000',RSYMOFF+1          PART 2 MATCHES?    GP10047
+         BE    NEXTCARD      YES; IGNORE THIS                   GP10047
+DODCNO2  CLI   RSYMORG,X'C8'      PART 1 MATCHES?               GP10049
+         BNE   TESTDATA      NO; CHECK FOR DATA                 GP10049
+         CLC   =X'1401000000',RSYMOFF+1      PART 2 MATCHES?    GP10049
+         BE    NEXTCARD      YES; IGNORE THIS                   GP10049
+         B     TESTDATA      SEE WHETHER WE NEED A DATA BLOCK
+*  NOTE THAT THE DOCUMENTATION IS INCORRECT. DECIOMAL DATA (P, Z) ALL
+*   HAVE A 1-BYTE LENGTH, NOT 2-BYTE AS STATED                  GP99188
+*          ALSO:  GQ
+TYPTAB   DC    C'CHB?FHEDAYSVPZL'  DC TYPE
+LENTAB   DC    AL1(1,1,1,0,0,0,0,0,0,0,0,0,0,0,0)  LEN-1 OF LENGTH FLD
+         SPACE 2
+*--------------------------------------------------------------------*
+*                                                                    *
+*   BUILD A DATA ENTRY ON THE COMMDATA CHAIN.                        *
+*                                                                    *
+*   IGNORE EXACT DUPLICATES, OTHERWISE ADD IN SEQUENCE BY START      *
+*     ADDRESS AND END ADDRESS                                        *
+*                                                                    *
+*   RESOLVE CONFLICTS BY SPLITTING EXCESS INTO ADDITIONAL DATA       *
+*   BLOCKS AND DISCARDING DUPLICATES (THIS PREVENTS CONFLICT WITH    *
+*   PRIOR RLD AND ESD GENERATED DATA BLOCKS                          *
+*                                                                    *
+*--------------------------------------------------------------------*
+         PUSH  USING
+         SPACE 1
+TESTDATA TM    LOCFLAG,$LFCSECT ARE WE IN A CSECT?
+         BZ    DONEDATA      ELSE GO TO THE LABEL
+MAKEDATA ICM   R1,15,CURRSIZE   LOAD AND TEST DATA LENGTH
+         BNP   DONEDATA      SKIP IF ZERO OR WORSE
+         CLC   CURRDUPE,=F'1'  MULTIPLE OCCURRENCE?             GP99180
+         BNH   MDATONE       NO                                 GP99180
+         CLI   CURRTYPE,C'S'  S-CONSTANT?                       GP99180
+         BNE   MDATONE       NO                                 GP99180
+         CLC   =F'2',CURRLEN  EXPECTED LENGTH?                  GP99180
+         BNE   MDATONE                                          GP99180
+         L     R1,CURRLEN    USE ITEM LENGTH AND LOOP           GP99180
+         ST    R1,CURRSIZE                                      GP99180
+MDATONE  A     R1,CURROFF            DISPLACEMENT TO NEW DATA   GP99180
+         BCTR  R1,0                  MINUS 1
+         ST    R1,CURREND            ENDING DISPLACEMENT
+MDATSCON LA    R8,COMMDATA           'LAST' FORWARD POINTER     GP99180
+         USING DATADSCT,R8           DEFINE BASE
+MDATLOOP LR    R2,R8         PRESERVE INSERTION ADDRESS
+         ICM   R8,15,DATANEXT        NEXT DATA BLOCK'S ADDRESS
+         BZ    MDATMAKE      NO MATCH; ADD AT END
+         CLC   CURREND,DATABEGN  IN DATA BLOCK?
+         BL    MDATMAKE      NO; ADD ONE PRIOR TO THIS
+         BE    MDAT162       PERHAPS; TEST THE OTHER WAY
+MDAT161  CLC   CURROFF,DATAEND  OVERLAP?
+         BH    MDATLOOP      NO; TRY ANOTHER
+MDAT162  CLC   CURROFF,DATABEGN   NEED TO SPLIT BEFORE DATA?
+         BNL   MDATNBEF      NO; CONTINUE CHECKING
+         BAL   R14,CHAINDAT  GET AND CHAIN A BLOCK
+         LM    R14,R0,CURROFF  GET CURRENT DISPLACEMENT, ETC.
+         L     R15,DATABEGN  GET NEW END
+         LR    R0,R15
+         SR    R0,R14        NEW SIZE
+         BCTR  R15,0         MAKE CORRECT END
+         STM   R14,R0,DATABEGN-DATADSCT(R1)  UPDATE PREFIX
+MDATNBEF CLC   CURREND,DATAEND  NEED TO ADD AT END?
+         BNH   DONEDATA      NO; WE'RE DONE HERE
+         LM    R14,R0,CURROFF  GET CURRENT START,ETC.
+         L     R14,DATAEND
+         LR    R0,R15        GET NEW END
+         SR    R0,R14        SET NEW SIZE
+         LA    R14,1(,R14)   OLD END + 1 IS NEW START
+         STM   R14,R0,CURROFF  SET IT BACK
+         B     MDATLOOP      NOW SEE WHERE THE REST FITS IN
+         SPACE 1
+MDATMAKE BAL   R14,CHAINDAT  INSERT NEW DATA BLOCK IN SEQUENCE
+DONEDATA L     R1,CURRDUPE   MORE THAN ONE OCCURRENCE?          GP99180
+         BCTR  R1,0          ACCOUNT FOR ONE JUST DONE          GP99180
+         LTR   R1,R1                                            GP99180
+         BNP   TESTLABL      NO MORE                            GP99180
+         CLI   CURRTYPE,C'S'  S-CONSTANT ?                      GP99180
+         BNE   TESTLABL      NO; DO LABEL                       GP99180
+         CLC   =F'2',CURRLEN  EXPECTED LENGTH?                  GP99180
+         BNE   TESTLABL                                         GP99180
+         LM    R14,R15,CURROFF  GET START AND END               GP99180
+         L     R0,CURRLEN    GET ITEM LENGTH                    GP99180
+         AR    R14,R0                                           GP99180
+         AR    R15,R0                                           GP99180
+         STM   R14,R15,CURROFF  UPDATE                          GP99180
+         ST    R1,CURRDUPE   ALL AFFECTED                       GP99180
+         B     MDATSCON      DO ANOTHER                         GP99180
+         POP   USING
+*--------------------------------------------------------------------*
+*   CURRENT DATA ARE TO BE ADDED NOW                                 *
+*--------------------------------------------------------------------*
+         PUSH  USING
+CHAINDAT STM   R14,R2,CHNSAVE
+         LA    R0,DATAL      GET NEW DATA BLOCK
+         BAL   R14,GETMAIN           ACQUIRE STORAGE FOR NEW DATA BLOCK
+         ITRACE ID=NEWDATA,          TRACE NEW BLOCKS                  +
+               RDATA1=R1,                                              *
+               DATA2=CURROFF
+         USING DATADSCT,R2   CALLER'S BASE ADDRESS
+         L     R0,DATANEXT   SAVE OLD FORWARD CHAIN
+         ST    R1,DATANEXT   CHAIN NEW TO PREVIOUS BLOCK
+         DROP  R2
+         USING DATADSCT,R1   CHEAT AND USE NEW BASE
+         ST    R0,DATANEXT   COMLETE POINTERS
+         MVC   DATAEYE,=CL8'DATA'    SET EYECATCHER
+         MVC   DATABEGN(3*L'DATABEGN),CURROFF  MOVE START/END/SIZE
+         MVC   DATANAME,COMMBLKS     INITIALIZE NAME
+         MVI   DATATYPE,$DATAUSR  FAKE USER SUPPLIED
+         MVC   DATAASMT,CURRTYPE  SAVE DC TYPE                  GP99169
+         MVC   DATAILEN,CURRLEN+L'CURRLEN-L'DATAILEN            GP99169
+*DEFER*  MVC   DATADUPE,CURRDUPE+L'CURRDUPE-L'DATADUPE          GP99169
+         LM    R14,R0,CHNSAVE
+         BR    R14           RETURN TO CALLER
+         POP   USING
+         SPACE 1
+*--------------------------------------------------------------------*
+*                                                                    *
+*  BUILD AND CHAIN A LABEL BLOCK.                                    *
+*    DURING CSECT PROCESSING, LABELS ARE CHAINED OFF COMMLABL        *
+*    DURING DSECT AND COMMON PROCESSING CHAIN OFF THE MATCHING       *
+*    DSCT BLOCK'S LABL FIELD (SET AT DODDSECT).                      *
+*                                                                    *
+*--------------------------------------------------------------------*
+         PUSH  USING
+         SPACE 1
+TESTLABL CLI   CURRLBL,C' '  IS THERE A LABEL?
+         BE    NEXTCARD      NO; GO FOR MORE
+         TM    LOCFLAG,$LFCSECT+$LFDSECT  WANTED ?
+         BZ    NEXTCARD      NO; SKIP UNTIL CSECT OR DSECT
+         SPACE 1
+MAKELBL  ITRACE ID=ADDLABEL,         CSECT REFERENCE                   +
+               DATA1=CURRDISP,       .. DISPLACEMENT REFERENCED        *
+               DATA2=CURRLBL         .. LABEL
+         SR    R2,R2         SET FLAG FOR FIRST TIME
+         L     R9,@LABELS            FORWARD POINTER'S ADDRESS
+         USING LABLDSCT,R9           DEFINE BASE
+MLABLOOP LR    R3,R9         REMEMBER END OF CHAIN
+         ICM   R9,15,LABLNEXT   GET AND TEST LINK
+         BZ    MLABMAKE              INSERT ON END OF CHAIN
+         CLC   LABLNAME,CURRLBL  DUPLICATE NAME?
+         BE    NEXTCARD      YES; SKIP IT
+         LTR   R2,R2         FIRST TIME?
+         BNZ   MLABLOOP      NO
+         CLC   LABLDISP,CURRDISP     TEST DISPLACEMENT          GP99161
+         BNH   MLABLOOP
+         LR    R2,R3         REMEMBER INSERTION POINT
+         B     MLABLOOP      LOOK AGAIN
+MLABMAKE LTR   R9,R2         FOUND INSERTION POINT ?
+         BNZ   MLABADD
+         LR    R9,R3         ELSE ADD AT END
+MLABADD  LA    R0,LABLL
+         BAL   R14,GETMAIN           ACQUIRE STORAGE FOR NEW LABL BLOCK
+         ITRACE ID=NEWLABL,          NEW CSECT LABEL                   +
+               RDATA1=R1,            .. BLOCK'S ADRESS                 +
+               DATA2=CURRDISP        .. LABEL'S DISPLACEMENT    GP99161
+         L     R0,LABLNEXT   GET OLD FORWARD LINK
+         ST    R0,LABLNEXT-LABLDSCT(,R1) NEXT BLOCK'S ADDRESS
+         ST    R1,LABLNEXT   SET PREVIOUS BLOCK'S FWD POINTER
+         DROP  R9
+         USING LABLDSCT,R1   NEW BASE
+         MVI   LABLSRCE,C'S' SHOW SUPPLIED BY SYMT SCAN
+         MVC   LABLEYE,=CL8'LABL'    SET BLOCK ID
+         MVC   LABLNAME,CURRLBL      SET LABEL'S NAME
+         MVC   LABLDISP,CURRDISP     SET DISPLACEMENT
+         MVC   LABLASMT,CURRTYPE     ASM TYPE                   GP99169
+         MVC   LABLTYPE,OUTOPR MOVE POSSIBLE TYPE
+         CLI   LABLTYPE,C'C'   CCW?
+           BNE   *+8           NO
+           MVI   LABLTYPE,C'D'   SET CCW AS DATA
+         CLI   LABLTYPE,C'D'   DATA?
+         BE    NEXTCARD      YES; PROCESS
+         CLI   LABLTYPE,C'I'   INSTRUCTION?
+         BE    NEXTCARD      YES; PROCESS
+         MVI   LABLTYPE,$LABLU       SET LABEL TYPE - USER'S
+         B     NEXTCARD
+         POP   USING
+         SPACE 1
+***********************************************************************
+**                                                                   **
+**   GET OUT. LEAVE. QUIT. EXIT. VANISH. VAMOSE. SAYONARA.           **
+**                                                                   **
+***********************************************************************
+EXIT000  ITRACE ID=EXIT
+         L     R13,4(,R13)           RESTORE REGISTER 13
+         LM    R14,R12,12(R13)       RESTORE ALL OTHER REGISTERS
+         SR    R15,R15               GIVE GOOD RETURN CODE
+         BR    R14                   RETURN TO CALLER
+         SPACE 1
+PRINT000 TM    PRINTFG1,$PFSYM  PRINT SYMBOL TABLE DATA ?
+         BNZ   PRINT010       YES
+         BAL   R14,PRINTCLR   NO; JUST CLEAR PRINT LINE
+         BR    R9
+PRINT010 BAL   R14,PRINTREC   PRINT
+         BR    R9
+*---------------------------------------------------------------------*
+*                                                                     *
+*              EXECUTED INSTRUCTIONS                                  *
+*                                                                     *
+*---------------------------------------------------------------------*
+EXMVCTXT MVC   0(0,R14),SYMTEXT  MOVE SYMBOL TEXT AFTER CURRENT
+EXMVCNAM MVC   CURRLBL(0),MSYMNAME  MOVE NAME FIELD
+*---------------------------------------------------------------------*
+*                                                                     *
+*              WORK AREAS                                             *
+*                                                                     *
+*---------------------------------------------------------------------*
+WORKBXLE DC    A(WORK,56,WORK+2*56-1)
+WORK     DC    3XL56'00'     ROOM FOR SLIDING THINGS AROUND
+         SPACE 2
+* ------------------------------------------------------------------- *
+*           FLAG/SWITCH BYTES                                         *
+* ------------------------------------------------------------------- *
+CHNSAVE  DC    5A(0)         SAVE AREA FOR DATA BLOCK ADDITION
+WORKAREA DS    0A            LOCAL WORK AREA CLEARED ON ENTRY
+@DSECT   DC    A(0)          DSECT POINTER
+#DSECT   DC    CL8' '        NAME OF CURRENT CSECT/DSECT
+@LABELS  DC    A(0)          LABEL CHAIN HEAD
+CURRLBL  DC    CL8' '        CURRENT LABEL
+CURRZBEG EQU   *               AREA ZEROED FOR EACH ENTRY       GP99169
+CURRDISP DC    A(0)          CURRENT OFFSET (SAVED FOR LABEL ADD)
+CURROFF  DC    A(0)   1/3    CURRENT OFFSET    (ORDER MATCHES DATABEGN
+CURREND  DC    A(0)   2/3    CURRENT END AREA     THROUGH DATALEN)
+CURRSIZE DC    F'0'   3/3    LENGTH * MULT.FACTOR
+CURRLEN  DC    F'0'          CURRENT LENGTH (SINGLE OCCURRENCE)
+CURRDUPE DC    F'0'          CURRENT MULTIPLICATION FACTOR      GP99169
+CURRTYPE DC    C' '          ASSEMBLER TYPE + 2/4/6 INSTR, 8 CCW
+CURRZLEN EQU   *-CURRZBEG                                       GP99169
+CURRZERO EQU   CURRZBEG,CURRZLEN,C'A'  CLEARED AREA             GP99169
+LOCFLAG  DC    X'00'                 HEADING FLAGS
+$SUBH    EQU   X'80'                 .. SUBHEADING PRINTED
+$EOD     EQU   X'40'                 .. END OF SYMT CHAIN HIT
+$LFCSECT EQU   X'20'                 .. IN A CSECT OR RSECT
+$LFDSECT EQU   X'10'                 .. IN A DSECT OR COMMON
+WORKLEN  EQU   *-WORKAREA
+SUBHEAD  DS    0C
+         DC   CL2' ',CL8'SECTION ',CL1' '
+         DC   CL6'OFFSET',CL2' '
+         DC   CL8'NAME ',CL2' O'
+         DC   CL2'RG',CL1' '
+         DC   CL8'DEF. ',CL2' '
+         DC   CL2'TY',CL1'P'
+         DC   C'E',CL2' '
+         DC   CL5'  LEN',CL2' '
+         DC   CL9'MULT.FACT',CL2' '
+         DC   CL5'SCALE',CL2' '
+SUBHEADL EQU   *-SUBHEAD
+         SPACE 1
+EMSG01   DC    C'DISASM5501E DATA AREA OVERLAPS AN INSTRUCTION, SHOULD +
+               HAVE BEEN DETECTED BY DISASM08'
+EMSG01L  EQU   *-EMSG01
+         SPACE 2
+         LTORG
+         SPACE 2
+         COPY  DISASMDA
+*---------------------------------------------------------------------*
+*                                                                     *
+*              COMMON DATA MAP                                        *
+*                                                                     *
+*---------------------------------------------------------------------*
+DISASM00 DISASMCM TYPE=DSECT
+DISASM00 DSECT ,
+         SPACE 1
+         ORG  PRTDATA+2
+OUTSECT  DC   CL8' ',CL1' '
+OUTOFF   DC   CL6' ',CL2' '
+OUTLBL   DC   CL8' ',CL2' '
+OUTORG   DC   CL2' ',CL1' '
+OUTOPR   DC   CL8' ',CL2' '
+OUTTYP   DC   CL2' ',CL1' '
+OUTTYPE  DC   C' ',CL2' '
+OUTLEN   DC   CL5' ',CL2' '
+OUTMUL   DC   CL9' ',CL2' '
+OUTSCL   DC   CL5' ',CL2' '
+         SPACE 2
+RSYMDATA DSECT ,
+RSYMORG  DS    X             ORGANIZATION
+$RSDC    EQU   X'80'           ON : DC
+$RSMUL   EQU   X'40'           ON : 3-BYTE MULT. FACTOR
+$RSCLS   EQU   X'20'           ON : CLUSTER (PACKED OR ZONED DECIMAL)
+$RSSCL   EQU   X'10'           ON : 2-BYTE SCALE FACTOR
+$RSNAME  EQU   X'08'           OFF: NAME FIELD EXISTS
+$RSDS    EQU   X'08'           ON : NO NAME FIELD
+RSYMOFF  DS    XL3           OFFSET IN CURRENT SECTION
+         SPACE 1
+MSYMDATA DSECT ,
+MSYMNAME DS    0CL8          0-8 BYTES OF LABEL
+MSYMTYPE DS    X             (DC TYPE FIELD)
+MSYMLEN  DS    X             1 OR 2 BYTE LENGTH FIELD
+         ORG   MSYMDATA
+MSYMMUL  DS    0XL3          MULT. FACTOR
+MSYMSCL  DS    0XL2          SCALE FACTOR
+         SPACE 1
+OUTHEXD  DSECT ,             FOR INHEX REGISTER FORM - PHONEY MAPPINGS
+OUTHEX   DS    CL8,C
+INPHEXD  DSECT ,
+INPHEX   DS    XL4
+         END  DISASM55

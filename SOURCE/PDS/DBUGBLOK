@@ -1,0 +1,23 @@
+*---------------------------------------------------------------------*
+*                                                                     *
+*        DEBUG INTERFACE BLOCK                                        *
+*                                                                     *
+*---------------------------------------------------------------------*
+         MACRO
+&NAME    DBUGBLOK &TYPE=
+         AIF      ('&TYPE' EQ 'DSECT').DSECT
+&NAME    DS       0A
+         AGO      .NODSECT
+.DSECT   ANOP
+         AIF      (T'&NAME EQ 'O').NONAME
+&NAME    DSECT
+.NODSECT ANOP
+DBUGDATA DC    A(0)                DEBUG DATA ADDRESS
+DBUGCMD  DC    C' '                COMMAND
+$DBUG    EQU   C' '                .. NORMAL DEBUG
+$DBUGHD  EQU   C'H'                .. PRINT SUB-HEADING
+$DBUGPRT EQU   C'P'                .. PRINT
+         MEXIT
+.NONAME  ANOP
+         MNOTE    12,'NAME REQUIRED WHEN TYPE=DSECT'
+         MEND

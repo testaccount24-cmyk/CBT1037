@@ -1,0 +1,123 @@
+DA19     TITLE 'DISASM19 - CROSS-REFERENCE FOR GENERATED SOURCE'
+         COPY   DISASMGB
+*--------------------------------------------------------------------*
+*                                                                    *
+*  Module name: DISASM19                                             *
+*                                                                    *
+*  Function:                                                         *
+*   BUILD AND PRINT LABEL CROSS-REFERENCE FOR GENERATED SOURCE       *
+*                                                                    *
+*--------------------------------------------------------------------*
+DISASM19 MODHEAD BASE=(R12,R10)   ENTRY HOUSEKEEPING
+         ITRACE ID=ENTRY
+         TM    PRINTFG2,$PFXRF       PROCESS CROSS-REFERECNE?
+         BZ    EXIT000               NO
+         MVC   COMMSUBH(SUBHEADL),SUBHEAD
+         LA    R1,SUBHEADL           SUBHEADING LENGTH
+         STH   R1,COMMSUBL           SET LENGTH
+         MVI   COMMSUBL,X'FF'        SET NON-CENTERED INDICATOR
+         MVI   PRTCMD,$PRTHEAD       SET COMMAND
+         BAL   R14,PRINTDAT          PRINT SUBHEADER
+GEN0015  DS    0H
+***********************************************************************
+**                                                                   **
+**   LABEL CHAIN IS IN SEQUENCE BY DISPLACEMENT.                     **
+**     WE NEED TO SORT (CRUDELY) BY LABEL                            **
+**                                                                   **
+***********************************************************************
+SORTLOOP SR    R3,R3         SET NO-SWAP SWITCH
+         LA    R5,COMMLABL   GET START OF CHAIN POINTER
+ITEMLOOP LTR   R4,R5
+         BZ    SORTDONE
+         ICM   R5,15,LABLNEXT-LABLDSCT(R4)  ANOTHER?
+         BZ    SORTDONE      NOT ON THIS PASS
+         USING LABLDSCT,R5   DECLARE IT
+         ICM   R6,15,LABLNEXT-LABLDSCT(R5)  FOLLOWER?
+         BZ    SORTDONE      NOT ON THIS PASS
+         CLC   LABLNAME,LABLNAME-LABLDSCT(R6)
+         BNH   ITEMLOOP
+         L     R0,LABLNEXT-LABLDSCT(,R6)
+         ST    R0,LABLNEXT-LABLDSCT(,R5)
+         ST    R6,LABLNEXT-LABLDSCT(,R4)
+         ST    R5,LABLNEXT-LABLDSCT(,R6)
+         LR    R3,R4         SET SWAP SWITCH
+         LR    R5,R6         USE LOWER VALUE
+         B     ITEMLOOP      LAZY
+SORTDONE LTR   R3,R3         DID WE SWAP ?
+         BNZ   SORTLOOP      YES; NEED TO RUN CHAIN AGAIN
+***********************************************************************
+**                                                                   **
+**   RUN THROUGH THE LABEL CHAIN, FORMAT THE COMMON DATA, AND THEN   **
+**     FOLLOW THE CROSS-REFERENCE CHAIN TO PRINT ONE OR MORE LINES.  **
+**                                                                   **
+***********************************************************************
+         LA    R5,COMMLABL   POINT TO LABEL CHAIN
+         USING LABLDSCT,R5   DECLARE IT
+MAINLOOP ICM   R5,15,LABLNEXT  GET NEXT ENTRY
+         BZ    EXIT000       OR OUT
+         MVC   OUTNAME,LABLNAME
+         UNPK  OUTDISP(9),LABLDISP(5)
+         TR    OUTDISP,COMMHXTR
+         MVI   OUTDISP+8,C' '
+         OC    LABLSTMT,LABLSTMT  DEFINED?
+         BNZ   DEFLABEL      YES
+         MVC   OUTSTMT,=CL7'*UNDEF*'
+         B     NEWLINE
+DEFLABEL UNPK  COMMDWRD,LABLSTMT
+         MVC   OUTSTMT,COMMDWRD+1
+NEWLINE  LA    R4,LABLXREF   POINT TO XREF CHAIN
+NEWCONT  LA    R7,OUTFIELD   POINT TO OUTPUT AREA               GP05095
+         LA    R6,NUMFIELD   GET NUMBER OF ENTRIES TO DO
+REFLOOP  ICM   R4,15,0(R4)   REFERENCE ENTRY?
+         BZ    REFDONE       NO MORE
+         CLC   LABLSTMT,4(R4)  SAME AS DEFINITION?
+         BE    REFSKIP       YES; ONLY DO ONE
+         UNPK  COMMDWRD,4(5,R4)  GET REFERENCE
+         MVC   OUTFIELD-OUTFIELD(L'OUTSTMT,R7),COMMDWRD+1
+         LA    R7,L'OUTFIELD(,R7)
+REFSKIP  BCT   R6,REFLOOP
+         BAL   R14,PRINTREC  PRINT THIS LINE
+         B     NEWCONT       START ANOTHER LINE                 GP05095
+         SPACE 1
+REFDONE  CLC   PRTDATA,PRTDATA-1  ALREADY PRINTED?
+         BE    MAINLOOP      YES; DO NEXT LABEL
+         BAL   R14,PRINTREC  ELSE PRINT IT
+         B     MAINLOOP      AND GET ANOTHER LABEL
+         SPACE 1
+EXIT000  ITRACE ID=EXIT
+         L     R13,4(,R13)           RESTORE REGISTER 13
+         LM    R14,R12,12(R13)       RESTORE ALL OTHER REGISTERS
+         SR    R15,R15               GIVE GOOD RETURN CODE
+         BR    R14                   RETURN TO CALLER
+         SPACE 2
+         LTORG
+         SPACE 2
+* ------------------------------------------------------------------- *
+*     DATA                                                            *
+* ------------------------------------------------------------------- *
+SUBHEAD  DC    CL08' LABEL '
+         DC    CL02' '
+         DC    CL08'  DISP  '
+         DC    CL02' '
+         DC    CL05' STMT'
+         DC    CL02' '
+         DC    C'REFERENCES'
+SUBHEADL EQU   *-SUBHEAD
+         SPACE 2
+         COPY  DISASMDA
+         SPACE 2
+*---------------------------------------------------------------------*
+*                                                                     *
+*              COMMON DATA MAP                                        *
+*                                                                     *
+*---------------------------------------------------------------------*
+DISASM00 DISASMCM TYPE=DSECT
+         SPACE 1
+DISASM00 DSECT ,
+         ORG   PRTDATA
+OUTNAME  DC    CL8' ',CL2' '
+OUTDISP  DC    CL8' ',CL2' '
+OUTSTMT  DC    CL5' ',CL2' '
+OUTFIELD DC    ((132+1-(OUTFIELD-PRTDATA))/6)CL(L'OUTSTMT+1)' '
+NUMFIELD EQU   (*-OUTFIELD)/L'OUTFIELD
+         END  DISASM19

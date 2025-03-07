@@ -1,0 +1,28 @@
+*---------------------------------------------------------------------*
+*                                                                     *
+*        PRINTER REQUEST BLOCK                                        *
+*                                                                     *
+*---------------------------------------------------------------------*
+         MACRO
+&NAME    PRTBLOK  &TYPE=,&PFX=PRT
+         LCLC  &P            JUST TO MAKE IT SHORT
+&P       SETC  '&PFX'
+         AIF      ('&TYPE' EQ 'DSECT').DSECT
+&NAME    DS    0C
+         AGO      .NODSECT
+.DSECT   ANOP
+         AIF      (T'&NAME EQ 'O').NONAME
+&NAME    DSECT
+.NODSECT ANOP
+&P.CMD   DC    X'00'               COMMAND
+$&P.HEAD EQU   C'H'                .. PRINT HEADING
+$&P.SUBH EQU   C'S'                .. PRINT SUB-HEADING
+$&P.PRT  EQU   C'P'                .. PRINT
+$&P.MEM  EQU   C'M'                .. NEW MEMBER
+$&P.CLS  EQU   C'C'                .. CLOSE PRINT
+&P.CC    DC    C' '                CARRIAGE CONTROL
+&P.DATA  DC    CL132' '            PRINT DATA
+         MEXIT
+.NONAME  ANOP
+         MNOTE    12,'NAME REQUIRED WHEN TYPE=DSECT'
+         MEND

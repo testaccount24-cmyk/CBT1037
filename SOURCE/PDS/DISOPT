@@ -1,0 +1,155 @@
+.*--------------------------------------------------------------------*
+.*                                                                    *
+.*         GLOBAL OPTIONS                                             *
+.*                                                                    *
+.*    THESE OPTIONS ALLOW CUSTOMIZED GENERATION OF DISASM.            *
+.*                                                                    *
+.*     OPTIONS YOU CAN SET ARE:                                       *
+.*                                                                    *
+.*           &TRACE   ON  - ITRACE MACROS WILL GENERATE THE CODE TO   *
+.*                          CAPTURE THE "ID" AND DATA1/RDATA1 AND     *
+.*                          DATA2/RDATA2, DISASM01 WILL ACQUIRE AND   *
+.*                          INITIALIZE THE TRACE TABLE CONTROL DATA   *
+.*                          IN DISASM00.                              *
+.*                    OFF - ITRACE MACROS WILL GENERATE NO CODE AT    *
+.*                          ALL.  DISASM01 WILL NOT ACQUIRE THE       *
+.*                          TRACE TABLE STORAGE.  GENERATING DISASM   *
+.*                          WITH &TRACE=OFF WILL REDUCE THE SIZE OF   *
+.*                          THE MODULE BY ABOUT 2K.                   *
+.*                                                                    *
+.*           &TRNBR   SPECIFIES THE NUMBER OF TRACE TABLE ENTRIES.    *
+.*                                                                    *
+.*           &MAXLINE SPECIFIES THE DEFAULT LINE COUNT PER PAGE ON    *
+.*                    DISPRINT AND DISDEBUG.                          *
+.*                                                                    *
+.*           &MINLINE SPECIFIES THE MINIMUM NUMBER OF LINES A USER    *
+.*                    CAN REQUEST VIA THE LINE/LINES/MAXLINES STATE-  *
+.*                    MENT.                                           *
+.*                                                                    *
+.*           &COMLIST ON  - THE COMMON DATA AREA LISTING WILL BE      *
+.*                          PRINTED ON THE ASSEMBLER LISTING.         *
+.*                    OFF - THE AREAS MAPPED BY DISASMDA WILL NOT     *
+.*                          BE PRINTED ON THE ASSEMBLER LISTING.      *
+.*                    ** NOTE THE COMLIST OPTION DOES NOT APPLY TO    *
+.*                    ** TO CSECT DISASM00.                           *
+.*                                                                    *
+.*                                                                    *
+.*           &DALIST  ON  - THE AREAS MAPPED BY DISASMDA WILL BE      *
+.*                          PRINTED ON THE ASSEMBLER LISTING.         *
+.*                    OFF - THE AREAS MAPPED BY DISASMDA WILL NOT     *
+.*                          BE PRINTED ON THE ASSEMBLER LISTING.      *
+.*                                                                    *
+.*--------------------------------------------------------------------*
+         MACRO
+&NAME    DISOPT &COMLIST=OFF,                                          +
+               &DALIST=OFF,                                            +
+               &MAXLINE=59,       (=59 ALLOWS 55 LINES OF TEXT)        +
+               &MINLINE=10,                                            +
+               &TRACE=ON,                                              +
+               &TRNBR=1000
+         GBLA &TRNBRG,&MAXL,&MINL
+         GBLB &MVSXA                                            GP04234
+         GBLC &TROPT,&DAPRT,&COMPRT
+         LCLA &ERROR
+&ERROR   SETA 0
+         AIF  (T'&TRACE EQ 'O').OPT010
+         AIF  ('&TRACE' EQ 'ON').OPT020
+         AIF  ('&TRACE' EQ 'OFF').OPT020
+         MNOTE 12,'TRACE MUST BE EITHER -ON- OR -OFF-'
+&ERROR   SETA 1
+         AGO  .OPT030
+.OPT010  ANOP
+         MNOTE 12,'TRACE OPTION MUST BE SPECIFIED'
+&ERROR   SETA 1
+         AGO  .OPT030
+.OPT020  AIF  ('&SYSECT' EQ '').OPT022  AVOID BLANK CSECT
+         DS   0H
+.OPT022  ANOP ,
+&TROPT   SETC '&TRACE'
+.OPT030  ANOP
+         AIF  (T'&TRNBR EQ 'O').OPT040
+         AIF  (&TRNBR LT 0).OPT050
+         AIF  (&TRNBR GT 9999).OPT060
+&TRNBRG  SETA &TRNBR
+         AGO  .OPT070
+.OPT040  ANOP
+         MNOTE 12,'TRNBR MUST BE SPECIFIED'
+&ERROR   SETA 1
+         AGO  .OPT070
+.OPT050  ANOP
+         MNOTE 12,'TRNBR CANNOT BE LESS THAN ZERO'
+&ERROR   SETA 1
+         AGO  .OPT070
+.OPT060  ANOP
+         MNOTE 12,'TRNBR CANNOT BE GREATER THAN 9999'
+&ERROR   SETA 1
+.OPT070  ANOP
+         AIF  (T'&MAXLINE EQ 'O').OPT080
+         AIF  (&MAXLINE LT 0).OPT090
+         AIF  (&MAXLINE GT 9999).OPT100
+&MAXL    SETA &MAXLINE
+         AGO  .OPT110
+.OPT080  ANOP
+         MNOTE 12,'MAXLINE MUST BE SPECIFIED'
+&ERROR   SETA 1
+         AGO  .OPT110
+.OPT090  ANOP
+         MNOTE 12,'MAXLINE CANNOT BE LESS THAN 0'
+&ERROR   SETA 1
+         AGO  .OPT110
+.OPT100  ANOP
+         MNOTE 12,'MAXLINE CANNOT BE GREATER THAN 9999'
+&ERROR   SETA 1
+.OPT110  ANOP
+         AIF  (T'&MINLINE EQ 'O').OPT120
+         AIF  (&MINLINE LT 0).OPT130
+         AIF  (&MINLINE GT &MAXLINE).OPT140
+&MINL    SETA &MINLINE
+         AGO  .OPT150
+.OPT120  ANOP
+         MNOTE 12,'MINLINE MUST BE SPECIFIED'
+&ERROR   SETA 1
+         AGO  .OPT150
+.OPT130  ANOP
+         MNOTE 12,'MINLINE CANNOT BE LESS THAN ZERO'
+&ERROR   SETA 1
+         AGO  .OPT150
+.OPT140  ANOP
+         MNOTE 12,'MINLINE CANNOT BE GREATER THAN MAXLINE'
+&ERROR   SETA 1
+.OPT150  ANOP
+         AIF  (T'&DALIST EQ 'O').OPT160
+         AIF  ('&DALIST' EQ 'ON').OPT170
+         AIF  ('&DALIST' EQ 'OFF').OPT170
+         MNOTE 12,'DALIST MUST BE -ON- OR -OFF-'
+&ERROR   SETA 1
+         AGO  .OPT180
+.OPT160  ANOP
+         MNOTE 12,'DALIST MUST BE SPECIFIED'
+&ERROR   SETA 1
+         AGO  .OPT180
+.OPT170  ANOP
+&DAPRT   SETC '&DALIST'
+.OPT180  ANOP
+         AIF  (T'&COMLIST EQ 'O').OPT190
+         AIF  ('&COMLIST' EQ 'ON').OPT200
+         AIF  ('&COMLIST' EQ 'OFF').OPT200
+         MNOTE 12,'COMLIST MUST BE -ON- OR -OFF-'
+&ERROR   SETA 1
+         AGO  .OPT210
+.OPT190  ANOP
+         MNOTE 12,'COMLIST MUST BE SPECIFIED'
+&ERROR   SETA 1
+         AGO  .OPT210
+.OPT200  ANOP
+&COMPRT  SETC  '&COMLIST'
+.OPT210  ANOP
+         AIF  (&ERROR EQ 0).EXIT
+         MNOTE 12,'ERRORS IN SPECIFYING OPTIONS'
+.EXIT    ANOP
+         MEND
+         DISOPT TRACE=ON,                                              +
+               TRNBR=1000,                                             +
+               MAXLINE=100,                                            +
+               MINLINE=10,                                             +
+               DALIST=OFF

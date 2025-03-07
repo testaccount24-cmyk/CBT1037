@@ -1,0 +1,663 @@
+*---------------------------------------------------------------------*
+*                                                                     *
+*          COMMON AREA MAPPING MACRO                                  *
+*                                                                     *
+*     This macro will generate either the 'common' module CSECT or    *
+*     a DSECT to map the 'common' module.  'Common' is used for       *
+*     constants and work areas that are required by several modules   *
+*     allowing some elimination of duplicated data and to allow       *
+*     inter-module communication.                                     *
+*                                                                     *
+*     The trace table code is also incorporated into the 'DISASM00'.  *
+*                                                                     *
+*---------------------------------------------------------------------*
+         MACRO
+&NAME    DISASMCM &TYPE=
+         GBLA  &TRNBRG,&MAXL,&MINL
+         GBLC  &TROPTG,&DAPRT,&COMPRT,&ASMNAME
+         AIF   (T'&NAME EQ 'O').NONAME
+         AIF   ('&TYPE' EQ 'CSECT').CSECT
+         AIF   ('&TYPE' EQ 'DSECT').DSECT
+         MNOTE 12,'INVALID TYPE'
+         MEXIT
+.CSECT   ANOP
+&NAME    CSECT
+         AGO   .NODSECT
+.DSECT   ANOP
+         AIF   ('&COMPRT' EQ 'ON').PRT010
+         PRINT OFF
+.PRT010  ANOP
+&NAME    DSECT
+.NODSECT ANOP
+*---------------------------------------------------------------------*
+*                                                                     *
+*          Double word for CVB/CVD                                    *
+*                                                                     *
+*---------------------------------------------------------------------*
+COMMDWRD DC    D'0'
+*---------------------------------------------------------------------*
+*                                                                     *
+*          ADDRESS CONSTANTS                                          *
+*                                                                     *
+*---------------------------------------------------------------------*
+         DC    CL8'DISASM00'
+ACOMM    DC    A(DISASM00)         COMMON MODULE
+         DC    CL8'DISASM01'
+A01      DC    V(DISASM01)         MAINLINE MODULE
+         DC    CL8'DISASM02'
+A02      DC    V(DISASM02)         PARAMETER READER
+         DC    CL8'DISASM03'
+A03      DC    V(DISASM03)         MODULE READER
+         DC    CL8'DISASM04'
+A04      DC    V(DISASM04)         CESD record processor
+         DC    CL8'DISASM05'
+A05      DC    V(DISASM05)         RLD record processor
+         DC    CL8'DISASM55'                                    GP99148
+A55      DC    V(DISASM55)         SYM RECORD PROCESSOR         GP99148
+         DC    CL8'DISASM06'
+A06      DC    V(DISASM06)         MODULE TEXT PRINTER; VER/REP GP10082
+         DC    CL8'DISASM07'
+A07      DC    V(DISASM07)         DSECT INTERPRETER
+         DC    CL8'DISASM08'
+A08      DC    V(DISASM08)         ASSIGN LABELS
+         DC    CL8'DISASM09'
+A09      DC    V(DISASM09)         SOURCE GENERATOR
+         DC    CL8'DISASM19'                                    GP99148
+A19      DC    V(DISASM19)         X-REF GENERATOR              GP99148
+         DC    CL8'DISASMDB'
+ADB      DC    V(DISASMDB)         DEBUG
+         DC    CL8'DISASMOP'
+AOP      DC    V(DISASMOP)         OPCODE TABLE
+         DC    CL8'DISASMPR'
+APR      DC    V(DISASMPR)         PRINT MODULE ADDRESS
+APU      DC    V(DISASMPU)         PUNCH MODULE ADDRESS         GP10047
+*---------------------------------------------------------------------*
+*                                                                     *
+*          TRACE CONTROL                                              *
+*                                                                     *
+*---------------------------------------------------------------------*
+         DS    0A
+         DC    CL4'1ST'            FIRST TRACE ENTRY
+TR1ST    DC    A(0)
+         DC    CL4'LAST'           LAST TRACE ENTRY
+TRLAST   DC    A(0)
+         DC    CL4'CURR'           CURRENT TRACE ENTRY
+TRCURR   DC    A(0)
+TRADDR   DC    A(0)                TRACE TABLE STORAGE ADDRESS
+TRR14    DC    A(0)                REGISTER 14 SAVE AREA
+TRDATA1  DC    CL8' '              TRACE DATA ITEM 1
+TRDATA2  DC    CL8' '              TRACE DATA ITEM 2
+TRSIZE   DC    A(&TRNBRG*32)       TRACE TABLE SIZE
+*---------------------------------------------------------------------*
+*   GLOBAL DATA - LIFE OF PROGRAM - OBTAINED IN SUBPOOL 88            *
+*---------------------------------------------------------------------*
+COMMIO   DC    A(0)                I/O BUFFER ADDRESS
+$IOSIZE  EQU   32760               I/O BUFFER SIZE
+*---------------------------------------------------------------------*
+*   GLOBAL DATA - FOR CSECT DURATION ONLY - FROM SUBPOOL 69           *
+*---------------------------------------------------------------------*
+COMMCLR  DS    0A                      START OF AREA TO CLEAR   GP10085
+COMMESD  DC    A(0)                EXTERNAL SYMBOL TABLE ANCHOR
+COMMRLD  DC    A(0)                RLD TABLE ANCHOR
+COMMUSNG DC    A(0)                USING TABLE ANCHOR
+COMMDSCT DC    A(0)                DSECT TABLE ANCHOR
+COMMBASE DC    A(0)                BASE TABLE ANCHOR
+COMMDATA DC    A(0)                DATA TABLE ANCHOR
+COMMDISP DC    A(0)                INSTRUCTION DISPLACEMENT TABLE
+COMMREF  DC    A(0)                REFERENCE TABLE ANCHOR
+COMMLABL DC    A(0)                LABEL TABLE ANCHOR
+COMMCSAD DC    A(0)                CSECT ADDRESS
+COMMCSEP DC    A(0)                LINK EDIT ASSIGNED ENTRY POINT
+COMMCSEA DC    A(0)                CSECT ENDING ADDRESS
+COMMCSEO DC    A(0)                CSECT ORIGINAL END PRE-ROUND GP10071
+COMMCSLN DC    A(0)                CSECT LENGTH
+COMMTXT  DC    A(0)                TEXT'S STORAGE ADDRESS
+COMMSYMP DC    A(0)                SYMBOL TABLE CHAIN           GP99148
+COMMVERS DC    A(0)                CHAIN OF VERIFY REQUESTS     GP10082
+COMMREPS DC    A(0)                CHAIN OF REPLACE REQUESTS    GP10082
+COMMESID DS    XL2                 CSECT's ESDID
+COMMCLRL EQU   *-COMMCLR               SIZE TO CLEAR            GP10085
+COMMBLK  DS    0A                      START OF AREA TO BLANK   GP10085
+COMMMOD  DC    CL8' '              MODULE NAME
+COMMCSNM DC    CL8' '              CSECT NAME
+COMMBLKL EQU   *-COMMCLR               SIZE TO CLEAR            GP10085
+*---------------------------------------------------------------------*
+*                                                                     *
+*      Sub-heading length is actually a flag byte and a length byte   *
+*                                                                     *
+*        If first byte is X'00', heading is to be centered            *
+*        If first byte is X'FF', heading is not to be centered        *
+*                                                                     *
+*      Second byte is the length for centered and non-centered        *
+*                                                                     *
+*---------------------------------------------------------------------*
+COMMSUBL DC    H'0'                SUB HEADING LENGTH
+COMMPFXL DC    H'0'                LABEL PREFIX LENGTH
+COMMH4   DC    H'4'                CONSTANT
+COMMH8   DC    H'8'                CONSTANT
+COMMH32  DC    H'32'               CONSTANT
+COMMMAXL DC    PL3'&MAXL'          MAXIMUM LINES PER PAGE
+COMMFILL DC    X'00'         GETMAIN: STORAGE FILL BYTE         GP99161
+COMMPOOL DC    AL1(69)       GETMAIN: SUBPOOL                   GP10085
+COMMFLAG DC    X'00'               GLOBAL CONTROL FLAGS
+$ABORT   EQU   X'80'               .. SERIOUS ERROR, ABORT
+$ERROR   EQU   X'40'               .. ERROR HAS OCCURRED
+$CSECT   EQU   X'20'               .. CSECT LOCATED
+$ABEND   EQU   X'10'               .. ABEND AT EXIT
+$ASMIN   EQU   X'08'               .. ASSEMBLER INPUT PRESENT
+$SEQLABL EQU   X'04'               .. SEQUENTIALLY NUMBERED LABELS
+COMMDD   DC    X'00'               DD STATEMENT FLAGS
+$PRTDD   EQU   X'80'               .. DISPRINT DD PRESENT
+$INDD    EQU   X'40'               .. DISIN DD PRESENT
+$MODDD   EQU   X'20'               .. DISMOD DD PRESENT
+$PUNCHDD EQU   X'10'               .. DISPUNCH DD PRESENT
+$DEBUGDD EQU   X'08'               .. DISDEBUG DD PRESENT
+$ADADD   EQU   X'04'               .. DISADATA DD PRESENT       GP99166
+$LISTDD  EQU   X'02'               .. DISLIST DD PRESENT        GP99166
+PRINTFG1 DC    AL1(0)        PRINT OPTIONS                      GP99132
+$PFDIR   EQU   X'80'           PRINT DIRECTORY ENTRY DATA       GP99132
+$PFESD   EQU   X'40'           PRINT CESD LISTING               GP99132
+$PFRLD   EQU   X'20'           PRINT RLD LISTING                GP99132
+$PFSYM   EQU   X'10'           PRINT SYM LISTING                GP99132
+$PFDAT   EQU   X'08'           PRINT SYSADATA INFO (LATER)      GP99132
+$PFLBL   EQU   X'02'           PRINT LABELS                     GP99132
+$PFTRC   EQU   X'01'           PRINT THE TRACE TABLE ON ABNORMAL END
+PRINTFG2 DC    AL1(0)        PRINT OPTIONS                      GP99132
+$PFHEX   EQU   X'80'           PRINT THE CSECT HEX DUMP         GP99132
+$PFASM   EQU   X'40'           PRINT THE ASSEMBLY LISTING       GP99132
+$PFXRF   EQU   X'20'           PRINT A LABEL CROSS-REFERENCE    GP99132
+$PFPUN   EQU   X'10'           PUNCH OUTPUT (?)                 GP99132
+$PFBUG   EQU   X'01'           PRINT ADDITIONAL DEBUG INFO      GP99149
+PRINTFG3 DC    X'00'         PROCESSING FLAG                    GP99166
+$PFMAC   EQU   X'80'           INCLUDE MACRO EXPANDED CODE (SYSADATA)
+$PFCOPY  EQU   X'40'           INCLUDE COPY CODE           (SYSADATA)
+$MG0504  EQU   X'01'           MSG ISSUED - SKIP DUPLICATES     GP04234
+COMMOPFG DC    X'00'         PROCESSING OPTIONS                 GP08063
+$OFIXSWP EQU   X'80'           TREAT DDD(X,0) AS DDD(0,X)       GP08063
+$OFNOBLK EQU   X'40'           NAME BLANK CSECTS                GP10074
+$OFROUND EQU   X'10'           ROUND CSECT TO DOUBLE-WORD       GP10066
+$OFZERO  EQU   X'08'           USE 0 FOR DS/ORG FILLERS         GP10066
+$OFABSR  EQU   X'04'           GENERATE ABSOLUTE REGISTERS      GP10029
+$OFPLSR  EQU   X'02'           GENERATE PL/S STYLE @nn REGS     GP10055
+$OFBCOP  EQU   X'01'           DO NOT GEN MNEMONIC BRANCH OPS   GP10029
+COMMPFX  DC    CL4' '              LABEL PREFIX
+COMMSUBH DC    CL133' '            SUB-HEADING
+COMMDBSH DC    CL35' '             DEBUG SUB-HEADING
+COMM0F0F DC    8X'0F'
+COMM1F1F DC    8X'1F'
+COMMBLKS DC    80C' '
+COMMHXCH DC    C'0123456789ABCDEF'
+COMMHXTR EQU   COMMHXCH-C'0'   SIMPLE HEX TO EBCDIC TRANSLATE   GP99132
+COMMCHHX DC    X'000A0B0C0D0E0F000000000000000000'
+         DC    X'00010203040506070809000000000000'
+COMMNBR  DS    0CL2
+         DC    C'0 '
+         DC    C'1 '
+         DC    C'2 '
+         DC    C'3 '
+         DC    C'4 '
+         DC    C'5 '
+         DC    C'6 '
+         DC    C'7 '
+         DC    C'8 '
+         DC    C'9 '
+         DC    C'10'
+         DC    C'11'
+         DC    C'12'
+         DC    C'13'
+         DC    C'14'
+         DC    C'15'
+         DC    C'16'
+*---------------------------------------------------------------------*
+*                                                                     *
+*          Printable characters                                       *
+*                                                                     *
+*---------------------------------------------------------------------*
+COMMPRT  DC    256X'FF'
+         ORG   COMMPRT+X'40'
+         DC    X'00'
+         ORG   COMMPRT+X'4A'
+         DC    6X'00'
+         ORG   COMMPRT+X'5A'
+         DC    6X'00'
+         ORG   COMMPRT+X'60'
+         DC    2X'00'
+         ORG   COMMPRT+X'6A'
+         DC    6X'00'
+         ORG   COMMPRT+X'79'
+         DC    4X'00'
+         ORG   COMMPRT+X'7E'
+         DC    2X'00'
+         ORG   COMMPRT+X'C0'
+         DC    10X'00'
+         ORG   COMMPRT+X'D0'
+         DC    10X'00'
+         ORG   COMMPRT+X'E2'
+         DC    8X'00'
+         ORG   COMMPRT+X'F0'
+         DC    10X'00'
+         ORG   COMMPRT+256
+*---------------------------------------------------------------------*
+*                                                                     *
+*          Non-printable characters                                   *
+*                                                                     *
+*---------------------------------------------------------------------*
+COMMNPRT DC    256X'00'
+         ORG   COMMNPRT+X'4A'
+         DC    X'FF'
+         ORG   COMMNPRT+X'4C'
+         DC    4X'FF'
+         ORG   COMMNPRT+X'5A'
+         DC    6X'FF'
+         ORG   COMMNPRT+X'60'
+         DC    2X'FF'
+         ORG   COMMNPRT+X'6A'
+         DC    X'FF'
+         ORG   COMMNPRT+X'6C'
+         DC    4X'FF'
+         ORG   COMMNPRT+X'79'
+         DC    4X'FF'
+         ORG   COMMNPRT+X'7E'
+         DC    2X'FF'
+         ORG   COMMNPRT+X'C0'
+         DC    10X'FF'
+         ORG   COMMNPRT+X'D0'
+         DC    10X'FF'
+         ORG   COMMNPRT+X'E2'
+         DC    8X'FF'
+         ORG   COMMNPRT+X'F0'
+         DC    10X'FF'
+         ORG   COMMNPRT+256
+         EJECT ,                                                GP99137
+***********************************************************************
+*                                                                     *
+*  GETOPENT   PERFORM INSTRUCTION TABLE LOOK-UP FOR OP-CODE IN R1     *
+*             IF MASK PRESENT, VERIFY MASK BITS ARE ZERO              *
+*  RETURNS:R14+0   NO MATCH                                           *
+*             +4   R15 -> OP-CODE TABLE ENTRY                         *
+*                  R0  =  INSTRUCTION LENGTH                          *
+*                                                                     *
+***********************************************************************
+         PUSH  USING                                            GP99137
+         DROP  ,                                                GP99137
+         USING &NAME,R11           DEFINE BASE                  GP99137
+GETOPENT STM   R0,R15,TRCESAVE     SAVE ALL REGISTERS           GP99137
+         SR    R15,R15                                          GP99137
+         IC    R15,0(,R1)    GET MAJOR OP-CODE                  GP99137
+         LA    R14,X'C0'     LENGTH DETERMINATION BITS          GP99137
+         NR    R14,R15       MASK OP-CODE                       GP99137
+         SRL   R14,6         RETAIN TOP TWO BITS ONLY           GP99137
+         SR    R0,R0                                            GP99137
+         IC    R0,GETOPLEN(R14)  EQUIVALENT LENGTH              GP05204
+         SLL   R15,2         TIMES ADDRESS ENTRY LENGTH         GP99137
+         AL    R15,AOP       POINT TO INSTRUCTION               GP99137
+         USING OPDSECT,R15                                      GP99137
+         ICM   R15,15,0(R15) IS IT: 0 ILLEGAL; - TABLE; + VALID GP99137
+         BZ    GETOPNOT      ILLEGAL                            GP99137
+         BP    GETOPTMK      GOOD - NOW CHECK MASK BITS         GP10018
+         SR    R14,R14       CLEAR FOR IC                       GP99137
+         SR    R2,R2         CLEAR FOR IC                       GP99137
+         IC    R14,1(,R1)    GET SUBCODE                        GP99137
+         IC    R2,OPFLAG1    GET MASK                           GP99137
+         NR    R14,R2        MASK UNNECESSARY BITS              GP99137
+         IC    R2,OPFLAG2    GET RIGHT SHIFT VALUE              GP99137
+         SRL   R14,0(R2)     SHIFT UNWANTED BITS                GP99137
+         CLM   R14,1,OPFLAG3 IS IT IN LEGAL RANGE?              GP99137
+         BH    GETOPNOT      NO; RETURN ILLEGAL                 GP99137
+         LA    R14,1(,R14)   ALLOW FOR TABLE DATA               GP99137
+         SLL   R14,2         OFFSET TO INSTRUCTION ADDRESS      GP99137
+         ALR   R15,R14       GET ENTRY ADDRESS POINTER          GP99137
+         ICM   R15,15,0(R15) IS IT LEGAL?                       GP99137
+         BNH   GETOPNOT      NO; FAIL IT                        GP99137
+GETOPTMK TM    OPFLAGS,$OPMASK  MASK PRESENT?                   GP10018
+         BZ    GETOPEXT      NO; EXIT WITH VALID INSTRUCTION    GP10018
+         LR    R4,R0         SAVE LENGTH                        GP10018
+         BCTR  R4,0          EXECUTE LENGTH                     GP10018
+         XC    GETOPWRK,GETOPWRK    CLEAR WORK AREA             GP10018
+         EX    R4,EXGETOPC   MOVE COMPLETE INSTRUCTION          GP10018
+         NC    GETOPWRK,OPMASK    MASK                          GP10018
+         BNZ   GETOPNOT      INVALID INSTRUCTION                GP10018
+GETOPEXT LM    R1,R14,TRCESAVE+4  RESTORE REGS EXC. R15, R0     GP99137
+         B     4(,R14)       RETURN                             GP99137
+GETOPNOT LM    R1,R15,TRCESAVE+4  RESTORE ALL BUT R0            GP99137
+         BR    R14                                              GP99137
+EXGETOPC MVC   GETOPWRK(0),0(R1)  MOVE COMPLETE INSTRUCTION     GP10018
+GETOPLEN DC    AL1(2,4,4,6) INSTRUCTION LENGTH BY TOP BITS      GP05204
+GETOPWRK DC    XL6'0'        WORK AREA FOR MASKING              GP10018
+         POP   USING                                            GP99137
+         EJECT
+*---------------------------------------------------------------------*
+*                                                                     *
+*          ADD TRACE ENTRY                                            *
+*                                                                     *
+*  During program initialization, DISASM01 acquires storage for the   *
+*  trace table and sets COMM1ST, COMMLAST, and COMMCURR.  DISASM01    *
+*  also sets R11 to the address of DISASM00 and all other modules     *
+*  depend on this remaining unchanged.  Any module except this        *
+*  module may call the trace routine.  Macro ITRACE generates the     *
+*  calling sequence.  R14 is the only register altered by the trace   *
+*  macro.                                                             *
+*                                                                     *
+*  The trace table is a "wrap-around" table.  COMM1ST is the first    *
+*  entry's address, COMMLAST is the last entry's address, and         *
+*  COMMCURR is the address of the last entry added to the table.      *
+*  When a trace entry is added to the table, the calling module's     *
+*  name, an 8-byte ID, and up to 2 8-byte fields are captured.        *
+*                                                                     *
+*                                                                     *
+*                                                                     *
+*      This code depends on:                                          *
+*           R11  'DISASM00' address                                   *
+*           R12  current module's base address                        *
+*                and the module's name must be at 10 bytes (0A hex)   *
+*                into the module                                      *
+*           R14  trace id's address and R14 + 8 will be the return    *
+*                address                                              *
+*                                                                     *
+*---------------------------------------------------------------------*
+         PUSH  USING                                            GP99137
+TRACE000 DS    0H
+         USING &NAME,R11           DEFINE BASE
+         USING TRENTRY,R1          DEFINE BASE
+         STM   R0,R15,TRCESAVE     SAVE ALL REGISTERS
+         ICM   R1,15,TRCURR        CURRENT TRACE ENTRY
+         BZ    TRACE020            NO TRACE TABLE
+*NUTS*   OC    0(TRENTRYL,R1),0(R1)    EMPTY ENTRY?             GP99136
+*NUTS*   BZ    TRACE010            YES.. USE THIS ENTRY         GP99136
+         LA    R1,TRENTRYL(,R1)    NEXT TRACE ENTRY
+         C     R1,TRLAST           BEYOND END OF TABLE?
+         BNH   TRACE010            NO
+         L     R1,TR1ST            'WRAP' TRACE TABLE
+TRACE010 DS    0H
+         ST    R1,TRCURR           SAVE CURRENT TRACE ENTRY ADDRESS
+*OLD*    MVC   TREMOD,10(R12)      COPY MODULE NAME             GP99140
+         MVC   TREMOD,5(R12)       COPY MODULE NAME FROM MODHEAD EXP.
+         MVC   TREID,0(R14)        COPY TRACE ID
+         MVC   TREDATA1,TRDATA1    COPY TRACE DATA 1
+         MVC   TREDATA2,TRDATA2    COPY TRACE DATA 2
+         XC    TRDATA1,TRDATA1     CLEAR TRACE DATA
+         XC    TRDATA2,TRDATA2     CLEAR TRACE DATA
+TRACE020 DS    0H
+         LM    R0,R15,TRCESAVE     RESTORE ALL REGISTERS
+         B     8(,R14)             RETURN
+         POP   USING                                            GP99137
+         EJECT                                                  GP99138
+*---------------------------------------------------------------------*
+*                                                                     *
+*       PRINT TRACE TABLE                                             *
+*                                                                     *
+*  THIS ROUTINE PRINTS THE TRACE TABLE WHEN CALLED, AND WHEN $PFTRC   *
+*  IS ON IN FLAG BYTE PRINTFG1.                                       *
+*                                                                     *
+*      This code depends on:                                          *
+*           R11  'DISASM00' address                                   *
+*                                                                     *
+*---------------------------------------------------------------------*
+         PUSH  USING                                            GP99137
+         USING &NAME,R11     DEFINE BASE                        GP99138
+TRACEPRT STM   R0,R15,TRCESAVE     SAVE ALL REGISTERS           GP99138
+         TM    PRINTFG1,$PFTRC  TRACE TABLE REQUESTED?          GP99138
+         BZ    TRACEPEN      NO; GET OUT                        GP99138
+         NI    PRINTFG1,255-$PFTRC  SET IT DONE                 GP99138
+         MVC   COMMSUBH(L'TRACESHD),TRACESHD                    GP99138
+         MVI   COMMSUBL+L'COMMSUBL-1,L'TRACESHD                 GP99138
+         MVI   COMMSUBL,X'FF'   SET LEFT-ADJUST REQUEST         GP99138
+         MVI   PRTCMD,$PRTSUBH  REQUEST SUB-HEADER              GP99138
+         BAL   R14,PRINTDAT  PRINT IT                           GP99138
+         ICM   R5,15,TRCURR  LOAD CURRENT ENTRY                 GP99138
+         BNZ   TRACEPIN      AND INCREMENT                      GP99138
+         B     TRACEPEN      ELSE GET OUT                       GP99138
+         USING TRENTRY,R5    DECLARE MAPPING                    GP99138
+TRACEPPR CLI   TREMOD,0      ENTRY USED ?                       GP99138
+         BE    TRACEPIN      NO; SKIP EMPTY                     GP99138
+         MVC   PRTDATA+TPOMOD(L'TPOMOD),TREMOD  SHOW MODULE NM  GP99138
+         MVC   PRTDATA+TPOTID(L'TPOTID),TREID   SHOW TRACE ID   GP99138
+         UNPK  PRTDATA+TPODA1A(L'TPODA1A+1),TREDATA1(5)         GP99138
+         TR    PRTDATA+TPODA1A(L'TPODA1A+1),COMMHXTR            GP99138
+         MVI   PRTDATA+TPODA1A+L'TPODA1A,C' '                   GP99138
+         UNPK  PRTDATA+TPODA1B(L'TPODA1B+1),TREDATA1+4(5)       GP99138
+         TR    PRTDATA+TPODA1B(L'TPODA1B+1),COMMHXTR            GP99138
+         MVI   PRTDATA+TPODA1B+L'TPODA1B,C' '                   GP99138
+         UNPK  PRTDATA+TPODA2A(L'TPODA2A+1),TREDATA2(5)         GP99138
+         TR    PRTDATA+TPODA2A(L'TPODA2A+1),COMMHXTR            GP99138
+         MVI   PRTDATA+TPODA2A+L'TPODA2A,C' '                   GP99138
+         MVC   COMMDWRD(4),TREDATA2+4                           GP99138
+         UNPK  PRTDATA+TPODA2B(L'TPODA2B+1),COMMDWRD(5)         GP99138
+         TR    PRTDATA+TPODA2B(L'TPODA2B+1),COMMHXTR            GP99138
+         MVI   PRTDATA+TPODA2B+L'TPODA2B,C' '                   GP99138
+         BAL   R14,PRINTREC  PRINT CURRENT RECORD               GP99138
+         XC    TRENTRY(TRENTRYL),TRENTRY  DON'T PRINT AGAIN     GP99138
+TRACEPIN LA    R5,TRENTRYL(,R5)    NEXT TRACE ENTRY             GP99138
+         CL    R5,TRCURR     DONE?                              GP99138
+         BE    TRACEPEN      YES; RETUNR                        GP99138
+         C     R5,TRLAST     BEYOND END OF TABLE?               GP99138
+         BNH   TRACEPPR        NO                               GP99138
+         L     R5,TR1ST      'WRAP' TRACE TABLE                 GP99138
+         B     TRACEPPR      AND FORMAT THIS ONE                GP99138
+TRACEPEN LM    R0,R15,TRCESAVE     RESTORE ALL REGISTERS        GP99138
+         BR    R14           RETURN                             GP99138
+         SPACE 1                                                GP99138
+TPOMOD   EQU   003,8,C'C'    MODULE NAME                        GP99138
+TPOTID   EQU   013,8,C'C'    TRACE IDENTIFIER                   GP99138
+TPODA1A  EQU   023,8,C'C'    DATA FIELD 1                       GP99138
+TPODA1B  EQU   032,8,C'C'    DATA FIELD 1 PART 2                GP99138
+TPODA2A  EQU   042,8,C'C'    DATA FIELD 2                       GP99138
+TPODA2B  EQU   051,8,C'C'    DATA FIELD 2 PART 2                GP99138
+TRACESHD DC    C'   MODULE    FUNCTION  DATA'                   GP99138
+         POP   USING                                            GP99137
+         SPACE 2                                                GP99148
+*---------------------------------------------------------------------*
+*                                                                     *
+*       COMMON STORAGE FUNCTIONS                                      *
+*                                                                     *
+*   GETMAIN:   GET STORAGE; AMOUNT IN R0                              *
+*   FREEMAIN:  FREE STORAGE; AMOUNT IN R0, ADDRESS IN R1              *
+*                                                                     *
+*---------------------------------------------------------------------*
+         PUSH  USING                                            GP99148
+         USING &NAME,R11     DEFINE BASE                        GP99148
+GETMAIN  STM   R14,R1,MAINRSV SAVE CRITICAL REGISTERS           GP99154
+*XA*     STORAGE OBTAIN,LENGTH=(0),LOC=ANY,SP=COMMPOOL          GP99148
+         ICM   R0,8,COMMPOOL      SET SUBPOOL                   GP10085
+         GETMAIN R,LV=(0)                                       GP04234
+         ST    R1,MAINRSV+12  RETURN R1 TO USER                 GP99154
+         LR    R0,R1         COPY ADDRESS                       GP99154
+         L     R1,MAINRSV+8  GET LENGTH AGAIN                   GP99154
+         SR    R15,R15       CLEAR SOURCE LENGTH AND FILL       GP99154
+         ICM   R15,8,COMMFILL  USE USER'S FILL BYTE             GP99161
+         MVCL  R0,R14        CLEAR THE STORAGE                  GP99154
+         LM    R14,R1,MAINRSV  RESTORE USER'S REGISTERS
+         BR    R14                   RETURN                     GP99148
+         SPACE 1                                                GP99148
+FREEMAIN STM   R14,R15,MAINRSV SAVE CRITICAL REGISTERS          GP99148
+*XA*     STORAGE RELEASE,LENGTH=(0),ADDR=(1),SP=COMMPOOL        GP99148
+         ICM   R0,8,COMMPOOL      SET SUBPOOL                   GP10085
+         FREEMAIN R,LV=(0),A=(1)                                GP04234
+         LM    R14,R15,MAINRSV RESTORE USER'S REGISTERS         GP99148
+         BR    R14                   RETURN                     GP99148
+         SPACE 2                                                GP99138
+*---------------------------------------------------------------------*
+*                                                                     *
+*       COMMON PRINT FUNCTIONS                                        *
+*                                                                     *
+*   PRINTMSG:  MOVE MESSAGE TO PRTDATA AND PRINT                      *
+*   PRINTREC:  DATA IN PRTDATA, SET PRINT FLAG                        *
+*   PRINTDAT:  DATA IN PRTDATA, FLAGS SET BY CALLER                   *
+*   PRINTCLR:  CLEAR PRINT LINE                                       *
+*                                                                     *
+*---------------------------------------------------------------------*
+         PUSH  USING                                            GP99137
+         USING &NAME,R11     DEFINE BASE                        GP99138
+PRINTMSG STM   R14,R1,PRINTRSV  SAVE IN TRACE AREA              GP99138
+         SR    R15,R15       CLEAR LENGTH FIELD                 GP99138
+         ICM   R15,1,0(R1)   LOAD MESSAGE LENGTH                GP99138
+         BNP   PRINTREX      BAD - JUST RETURN                  GP99138
+         LA    R0,L'PRTDATA                                     GP99138
+         CR    R15,R0        WILL THE DATA FIT?                 GP99138
+         BNH   *+6                                              GP99138
+         LR    R15,R0        TRUNCATE IF TOO LONG               GP99138
+         BCTR  R15,0         DECREMENT                          GP99138
+         EX    R15,PRINTMVR  MOVE TO PRINT LINE                 GP99138
+         LM    R14,R0,PRINTRSV  RESTORE REGISTERS               GP99138
+         B     PRINTREC      AND PRINT IT                       GP99138
+PRINTMVR MVC   PRTDATA(0),1(R1)  MOVE MESSAGE TEXT              GP99138
+         SPACE 1                                                GP99138
+PRINTREC MVI   PRTCMD,$PRTPRT        SET COMMAND                GP99138
+PRINTDAT STM   R14,R1,PRINTRSV  SAVE A FEW REGISTERS            GP99138
+         LA    R1,PRTBLOK    SET PARAMETER BLOCK ADDRESS        GP99138
+         L     R15,APR               PRINT MODULE ENTRY POINT   GP99138
+         BALR  R14,R15               LINK TO PRINT MODULE       GP99138
+PRINTREX LM    R14,R1,PRINTRSV  RESTORE REGISTERS               GP99138
+PRINTCLR MVI   PRTCC,C' '    PREPARE TO CLEAR                   GP99138
+         MVC   PRTDATA,PRTDATA-1   CLEAR PRINT LINE             GP99138
+         BR    R14                   RETURN                     GP99138
+         SPACE 1                                                GP99138
+PRTBLOK  PRTBLOK TYPE=CSECT  USE A SINGLE PRINT DEFINITION      GP99138
+         SPACE 1                                                GP10047
+PUNCHCRD MVC   PUNDATA,0(R1) COPY USER'S CARD                   GP10047
+PUNCHREC MVI   PRTCMD,$PRTPRT        SET COMMAND                GP10047
+PUNCHDAT STM   R14,R1,PRINTRSV  SAVE A FEW REGISTERS            GP10047
+         LA    R1,PUNBLOK    SET PARAMETER BLOCK ADDRESS        GP10047
+         L     R15,APU               PUNCH MODULE ENTRY POINT   GP10047
+         BALR  R14,R15               LINK TO PUNCH MODULE       GP10047
+         LM    R14,R1,PRINTRSV  RESTORE REGISTERS               GP10047
+         BR    R14                   RETURN                     GP10047
+         SPACE 1                                                GP10047
+PUNBLOK  PUNBLOK TYPE=CSECT  USE A SINGLE PUNCH DEFINITION      GP10047
+         SPACE 1                                                GP10047
+         LTORG ,                                                GP99138
+         POP   USING                                            GP99137
+TRCESAVE DC    16A(0)        TRACE REGISTER SAVE AREA           GP99138
+PRINTRSV DC    4A(0)         PRINT REGISTER SAVE AREA           GP99138
+MAINRSV  DC    4A(0)         STORAGE REGISTER SAVE AREA         GP99154
+         SPACE 1                                                GP99145
+HEXTRT   DC    256X'FF'      SET ALL CHARACTERS INVALID         GP99145
+         ORG   HEXTRT+C' '   SPECIAL VALUE FOR STOPPER          GP99172
+         DC    C' '                                             GP99172
+         ORG   HEXTRT+C'A'   DEFINE A-F                         GP99145
+         DC    6X'00'                                           GP99145
+         ORG   HEXTRT+X'81'  DEFINE A-F LOWER CASE              GP99145
+         DC    6X'00'                                           GP99145
+         ORG   HEXTRT+C'0'   DEFINE 0-9                         GP99145
+         DC    10X'00'                                          GP99145
+         ORG   HEXTRT+256    (JUST IN CASE)                     GP99145
+         SPACE 1                                                GP99145
+INTTRT   DC    256X'FF'      SET ALL CHARACTERS INVALID         GP99172
+         ORG   INTTRT+C' '   SPECIAL VALUE FOR STOPPER          GP99172
+         DC    C' '                                             GP99172
+         ORG   INTTRT+C'0'   DEFINE 0-9                         GP99172
+         DC    10X'00'                                          GP99172
+         ORG   INTTRT+256    (JUST IN CASE)                     GP99172
+         SPACE 1                                                GP99145
+BLKTRT   DC    256X'FF'      FIND A BLANK TABLE                 GP99145
+         ORG   BLKTRT+C' '   STOPPER                            GP99145
+         DC    X'04'         SIGNAL                             GP99145
+         ORG   BLKTRT+C'@'   AT                                 GP99145
+         DC    X'00'         VALID                              GP99145
+         ORG   BLKTRT+C'('   LEFT PARENTHESIS FOR DISASM09      GP99181
+         DC    X'00'         VALID                              GP99181
+         ORG   BLKTRT+C''''  APOSTROPHE/QUOTE FOR DISASM09      GP99181
+         DC    X'00'         VALID                              GP99181
+         ORG   BLKTRT+C'*'   ASTERISK FOR DISASM09              GP99184
+         DC    X'00'         VALID                              GP99184
+         ORG   BLKTRT+C'#'   NUMBER/POUND                       GP99145
+         DC    X'00'         VALID                              GP99145
+         ORG   BLKTRT+C'$'   DOLLAR                             GP99145
+         DC    X'00'         VALID                              GP99145
+         ORG   BLKTRT+C'_'   UNDERLINE                          GP99145
+         DC    X'00'         VALID                              GP99145
+         ORG   BLKTRT+C'A'   A-I                                GP99145
+         DC    9X'00'        VALID                              GP99145
+         ORG   BLKTRT+C'J'   J-R                                GP99145
+         DC    9X'00'        VALID                              GP99145
+         ORG   BLKTRT+C'S'   S-Z                                GP99145
+         DC    8X'00'        VALID                              GP99145
+         ORG   BLKTRT+C'0'   0-9                                GP99145
+         DC    10X'00'       VALID                              GP99145
+         ORG   BLKTRT+256    (JUST IN CASE)                     GP99145
+         SPACE 1                                                GP99145
+NBLTRT   DC    256X'FF'      FIND A NON-BLANK                   GP99145
+         ORG   NBLTRT+C' '   SKIPPER                            GP99145
+         DC    X'00'         SIGNAL                             GP99145
+         ORG   NBLTRT+256    (JUST IN CASE)                     GP99145
+         SPACE 2
+*---------------------------------------------------------------------*
+*                                                                     *
+*          TRACE TABLE ENTRY                                          *
+*                                                                     *
+*---------------------------------------------------------------------*
+TRENTRY  DSECT
+TREMOD   DS    CL8                 MODULE NAME
+TREID    DS    CL8                 TRACE ID
+TREDATA1 DS    CL8                 TRACE DATA 1
+TREDATA2 DS    CL8                 TRACE DATA 2
+TRENTRYL EQU   *-TRENTRY           ENTRY LENGTH
+         SPACE 2
+* ------------------------------------------------------------------- *
+*                                                                     *
+*        OPCODE DEFINITIONS                                           *
+*                                                                     *
+* ------------------------------------------------------------------- *
+OPDSECT  DSECT
+OPMNEM   DS    CL6           MNEMONIC
+OPFLAG1  EQU   OPMNEM+1,1,C'B'  OPTAB ENTRY FLAGS               GP99137
+OPFLAG2  EQU   OPMNEM+2,1,C'B'  OPTAB ENTRY FLAGS               GP99137
+OPFLAG3  EQU   OPMNEM+3,1,C'B'  OPTAB ENTRY FLAGS               GP99137
+OPFORM   DS    X             FORMAT
+$OPE     EQU   X'00'         .. E FORMAT - OPERAND ONLY         GP99132
+$OPRR1   EQU   X'01'         .. RR FORMAT 1 (R1,R2)
+$OPRR2   EQU   X'02'         .. RR FORMAT 2 (SVCS)
+$OPRR3   EQU   X'03'         .. RR FORMAT 3 (BRANCHES)
+$OPRR4   EQU   X'04'         .. RR FORMAT 4 (R1 ONLY)           GP99132
+$OPRR5   EQU   X'05'         .. RR FORMAT 5 (R2 ONLY)           GP99132
+$OPRRE   EQU   X'06'         .. RRE FORMAT 1 (R1,R2 IN +3 ONLY) GP99132
+$OPRX    EQU   X'07'         .. RX FORMAT
+$OPRXA   EQU   X'08'         .. RX FORMAT, BUT NO R1            GP99132
+$OPS     EQU   X'09'         .. S FORMAT
+$OPSI    EQU   X'0A'         .. SI (IMMEDIATE) FORMAT
+$OPRI    EQU   X'0B'   1/2   .. RSI REG/REG/IMMEDIATE           GP99132
+$OPRSI   EQU   X'0B'   2/2   .. RSI REG/REG/IMMEDIATE           GP99132
+$OPRS1   EQU   X'0C'         .. RS FORMAT 1 (SHIFTS)
+$OPRS2   EQU   X'0D'         .. RS FORMAT 2 (BXLE, BXH,  )
+$OPRS3   EQU   X'0E'         .. RS FORMAT 3 (MASK TYPE.. CLM, ICM..)
+$OPSS1   EQU   X'0F'         .. SS FORMAT 1 (CHARACTER)
+$OPSS2   EQU   X'10'         .. SS FORMAT 2 (PACKED DECIMAL)
+$OPSS3   EQU   X'11'         .. SS FORMAT 3 (MVCK, MVCS, MVCP)
+$OPSS4   EQU   X'12'         .. SS FORMAT 4 (SRP)
+$OPSSE   EQU   X'13'         .. SSE FORMAT  (ADDR,ADDR)         GP99132
+$OPRRE0  EQU   X'14'         .. RRE FORMAT  (NO REGS)           GP10018
+$OPRRE3  EQU   X'15'         .. RRE FORMAT  (R1 ONLY)           GP10018
+OPFLAGS  DS    X             FLAGS
+$OPEXT   EQU   X'80'         .. EXTENDED MNEMONICS
+$OPSVC   EQU   X'40'         .. SVC
+$OPNCMNT EQU   X'20'         .. NO COMMENT
+$OPREF   EQU   X'10'         .. GENERATES A LABEL REFERENCE
+$OPCCA   EQU   X'08'         .. SETS CONDITION CODE, ARITHMETIC
+$OPCCC   EQU   X'04'         .. SETS CONDITION CODE, COMPARE
+$OPCCL   EQU   X'02'         .. SETS CONDITION CODE, LOGICAL
+$OPMASK  EQU   X'01'         .. ENTRY HAS A MASK                GP10018
+OPENTSZ  EQU   *-OPDSECT     SIZE OF UNCOMMENTED ENTRY          GP99137
+OPMASK   DS    0XL6          (OPTIONAL) MASK                    GP10018
+OPCMNT   DS    0CL12         (OPTIONAL) COMMENT                 GP10018
+         SPACE 2
+         AIF   ('&COMPRT' EQ 'ON').PRT020
+         PRINT ON
+.PRT020  ANOP
+*---------------------------------------------------------------------*
+*                                                                     *
+*          ABEND REASON CODES                                         *
+*                                                                     *
+*---------------------------------------------------------------------*
+ABEND001 EQU   1                   REQUESTED VIA AN ABEND STATEMENT
+ABEND002 EQU   2                   UNKNOWN RETURN CODE FROM BLDL
+ABEND003 EQU   3                   UNKNOWN RLD ITEM TYPE
+ABEND004 EQU   4                   RLD DATA REMAINING WENT NEGATIVE
+ABEND005 EQU   5                   ATTEMPT TO GEN AN INSTR ON ODD ADDR
+         SPACE 1                                                GP99132
+         YREGS ,                   MNEMONIC REGISTER MAPPINGS   GP99132
+         MEXIT
+.NONAME  ANOP
+         MNOTE 12,'NAME IS REQUIRE WHEN TYPE=DSECT'
+.MEXIT   ANOP
+         MEXIT
+         MEND

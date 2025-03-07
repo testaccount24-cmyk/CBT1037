@@ -1,0 +1,26 @@
+*---------------------------------------------------------------------*
+*                                                                     *
+*        PUNCH REQUEST BLOCK                                          *
+*                                                                     *
+*---------------------------------------------------------------------*
+         MACRO
+&NAME    PUNBLOK  &TYPE=,&PFX=PUN
+         LCLC  &P            JUST TO MAKE IT SHORT
+&P       SETC  '&PFX'
+         AIF      ('&TYPE' EQ 'DSECT').DSECT
+&NAME    DS    0C
+         AGO      .NODSECT
+.DSECT   ANOP
+         AIF      (T'&NAME EQ 'O').NONAME
+&NAME    DSECT
+.NODSECT ANOP
+&P.CMD   DC    X'00'               COMMAND
+$&P.PRT  EQU   C'P'                .. PUNCH
+$&P.PUN  EQU   C'P'                .. PUNCH
+$&P.CLS  EQU   C'C'                .. CLOSE PRINT
+&P.CC    DC    C' '                CARRIAGE CONTROL
+&P.DATA  DC    CL80' '             PRINT DATA
+         MEXIT
+.NONAME  ANOP
+         MNOTE    12,'NAME REQUIRED WHEN TYPE=DSECT'
+         MEND

@@ -1,0 +1,214 @@
+         AIF ('&DAPRT' EQ 'ON').DA010
+         PRINT OFF
+.DA010   ANOP
+* ------------------------------------------------------------------- *
+*                                                                     *
+*     DISASM's data areas                                             *
+*                                                                     *
+*     There were so many different blocks that making up macros or    *
+*     copy members took more time than it was worth.  Most of the     *
+*     data areas are small, so it doesn't cost much to assemble them  *
+*     all in all the modules.                                         *
+*                                                                     *
+* ------------------------------------------------------------------- *
+         SPACE 2
+* ------------------------------------------------------------------- *
+*                                                                     *
+*        BASE REGISTER DEFINITIONS                                    *
+*                                                                     *
+* ------------------------------------------------------------------- *
+BASEDSCT DSECT
+BASENEXT DS   A                   NEXT BASE BLOCK
+BASEEYE  DS   CL8                 EYE CATCHER
+BASEBEGN DS   A                   STARTING DISPLACEMENT
+BASEEND  DS   A                   ENDING DISPLACEMENT
+BASEDISP DS   A                   DISPLACEMENT BASE REFERS TO
+BASEREG  DS   X                   BASE REGISTER
+         DS   0A                    FASTER, BIGGER, BETTER
+BASEL    EQU  *-BASEDSCT
+         SPACE 2
+* ------------------------------------------------------------------- *
+*                                                                     *
+*        DATA AREA DEFINITIONS                                        *
+*                                                                     *
+* ------------------------------------------------------------------- *
+DATADSCT DSECT
+DATANEXT DS   A                   NEXT DATA BLOCK
+DATAEYE  DS   CL8                 EYE CATCHER
+DATANAME DS   CL8                 DATA NAME (VCON AND Q TYPES)
+DATALBA  DS   A                   LABEL BLOCK ADDRESS FOR ADCON
+DATALBD  DS   A                   DISPLACEMENT FROM LABEL FOR ADCON
+DATABEGN DS   A       1/3         STARTING DISPLACEMENT
+DATAEND  DS   A       2/3         ENDING DISPLACEMENT
+DATALEN  DS   A       3/3         LENGTH
+DATAILEN DS   H                   ITEM SIZE                     GP99169
+DATAASMT DS   C    ASSEMBLER TYPE (X, C, ETC.; BUT 8 FOR CCW)   GP99169
+DATATYPE DS   X                   DATA TYPE
+$DATAUSR EQU  X'01'               .. USER DEFINED
+$DATADS  EQU  X'02'               .. FILLER (DS OR ORG)         GP10029
+$DATAINT EQU  X'03'               .. INTERNALLY DETECTED
+$DATAACN EQU  X'14'               .. A-CON
+$DATAARL EQU  X'15'    10-LBL     .. A-CON W/CSECT RELOCATION   GP05212
+$DATAVCN EQU  X'16'               .. V-CON
+$DATACXD EQU  X'37'               .. PSEUDO AREA SIZE
+$DATAQ   EQU  X'38'               .. PSEUDO AREA DISPLACEMENT
+DATABASE DS   A                   ESD BASE FOR RELOCATABLES     GP10069
+DATAL    EQU  *-DATADSCT
+         SPACE 2
+* ------------------------------------------------------------------- *
+*                                                                     *
+*        DSECT DEFINITIONS                                            *
+*                                                                     *
+* ------------------------------------------------------------------- *
+DSCTDSCT DSECT
+DSCTNEXT DS   A                   NEXT DSECT BLOCK
+DSCTEYE  DS   CL8                 EYE CATCHER
+DSCTNAME DS   CL8                 DSECT'S NAME
+DSCTLBA  DS   A                   FIRST LABEL BLOCK'S ADDRESS
+         DS   0A                    FASTER, BIGGER, BETTER
+DSCTL    EQU  *-DSCTDSCT
+         SPACE 2
+* ------------------------------------------------------------------- *
+*                                                                     *
+*        ESD REFERENCES                                               *
+*                                                                     *
+* ------------------------------------------------------------------- *
+ESDDATA  DSECT
+ESDNEXT  DS    A                  NEXT ESD BLOCK'S ADDRESS
+ESDEYE   DS    CL8                EYE CATCHER
+ESDID    DS    H                  ESD ID
+ESDNAME  DS    CL8                ENTRY POINT NAME
+ESDTYPE  DS    X                  TYPE
+$ESDSD   EQU   X'00'              .. EXTERNAL SYMBOL
+$ESDER   EQU   X'02'              .. UNRESOLVED EXTERNAL REFERENCE
+$ESDLR   EQU   X'03'              .. LABEL REFERENCE
+$ESDPC   EQU   X'04'              .. PRIVATE CODE DEFINITION
+$ESDCM   EQU   X'05'              .. COMMON MODULE
+$ESDPR   EQU   X'06'              .. PSEUDO REGISTER
+$ESDNULL EQU   X'07'              .. NULL
+$ESDWX   EQU   X'0A'              .. UNRESOLVED WEAK EXTERNAL REFERENCE
+$ESDOV   EQU   X'14'              .. OVERLAY SEGMENT TABLE
+$ESDPC1  EQU   X'20'              .. PRIVATE CODE DEFINITION (FIRST)
+ESDADDR  DS    AL3                ADDRESS OF ENTRY POINT
+ESDSEG   DS    X                  SEGMENT NUMBER
+ESDLEN   DS    AL3                ENTRY LENGTH
+ESDL     EQU   *-ESDNAME          ESD DATA LENGTH IN LOAD MODULE
+ESDFLAG  DS    X                  SPECIAL FLAGS                 GP10071
+$ESFXTRN EQU   X'80'                GENERATE EXTRN/WXTRN        GP10071
+         DS   0A                    FASTER, BIGGER, BETTER
+ESDDATAL EQU   *-ESDDATA
+         SPACE 2
+* ------------------------------------------------------------------- *
+*                                                                     *
+*        LABEL BLOCK                                                  *
+*                                                                     *
+* ------------------------------------------------------------------- *
+LABLDSCT DSECT
+LABLNEXT DS   A                   NEXT LABEL BLOCK
+LABLEYE  DS   CL8                 EYE CATCHER
+LABLNAME DS   CL8                 LABEL NAME
+LABLDISP DS   A                   DISPLACEMENT FROM BASE
+LABLXREF DS   A                   CROSS-REFERENCE CHAIN         GP99184
+LABLSTMT DS   PL5                 X'0' OR STMT # OF DEFINITION  GP99184
+LABLTYPE DS   C                   LABEL TYPE
+$LABLD   EQU  C'D'                .. LABEL AT DATA
+$LABLE   EQU  C'E'                .. LABEL FROM AN ESD ENTRY
+$LABLI   EQU  C'I'                .. LABEL AT AN INSTRUCTION
+$LABLR   EQU  C'R'                .. LABEL FROM AN RLD ENTRY
+$LABLU   EQU  C'U'                .. LABEL FROM USER - UNSPECIFIED
+LABLSRCE DS   C                   SOURCE - U OR NULL            GP99139
+LABLASMT DS   C                   ASSEMBLER TYPE (X, C, ETC.)   GP99139
+         DS   0A                    FASTER, BIGGER, BETTER
+LABLL    EQU  *-LABLDSCT
+         SPACE 2
+* ------------------------------------------------------------------- *
+*                                                                     *
+*        INSTRUCTION OPERAND REFERENCES                               *
+*                                                                     *
+* ------------------------------------------------------------------- *
+REFDSCT  DSECT
+REFNEXT  DS   A                   NEXT REFERENCE BLOCK
+REFEYE   DS   CL8                 EYE CATCHER
+REFOPER1 DS   A                   OPERAND 1 REFERENCE
+REFOPER2 DS   A                   OPERAND 2 REFERENCE
+REFDISP1 DS   A                   DISPLACEMENT FROM LABEL
+REFDISP2 DS   A                   DISPLACEMENT FROM LABEL
+REFDISPI DS   A                   REFERENCING INSTRUCTIONS DISPLACEMENT
+REFOPCD  DS   XL2                 OP-CODE OF REFERENCING INSTRUCTION
+         DS   0A                    FASTER, BIGGER, BETTER
+REFL     EQU  *-REFDSCT
+         SPACE 2
+* ------------------------------------------------------------------- *
+*                                                                     *
+*        RELOCATION DATA REFERENCES                                   *
+*                                                                     *
+* ------------------------------------------------------------------- *
+RLDDATA  DSECT
+RLDNEXT  DS    A                  NEXT RLD BLOCK'S ADDRESS
+RLDEYE   DS    CL8                EYE CATCHER
+RLDESD   DS    A                  CORRESPONDING ESD'S ADDRESS
+RLDDISP  DS    A                  DISPLACEMENT TO CONSTANT
+RLDLEN   DS    H                  CONSTANT'S LENGTH
+RLDTYPE  DS    X                  RLD TYPE
+$RLDACON EQU   X'00'              .. ADCON
+$RLDACRL EQU   X'01'              .. ADCON W/CSECT RELOCATION   GP05212
+$RLDVCON EQU   X'10'              .. VCON
+$RLDPSDP EQU   X'20'              .. PSEUDO AREA DISPLACEMENT (Q)
+$RLDPSSZ EQU   X'30'              .. PSEUDO AREA SIZE         (CXD)
+$RLDER1  EQU   X'80'              .. UNRESOLVED REFERENCE
+$RLDER2  EQU   X'90'              .. UNRESOLVED REFERENCE
+RLDPTR   DS    XL2                RLD POINTER
+RLDPP    DS    XL2                RLD POSITION POINTER
+RLDDIR   DS    C                  DIRECTION (+ OR -)
+         DS   0A                    FASTER, BIGGER, BETTER
+RLDDATAL EQU   *-RLDDATA          RLD DATA LENGTH
+         SPACE 2                                                GP99148
+* ------------------------------------------------------------------- *
+*                                                                     *
+*        SYMBOL TABLE INPUT                                           *
+*                                                                     *
+* ------------------------------------------------------------------- *
+SYMDATA  DSECT ,                                                GP99148
+SYMNEXT  DS    A                  NEXT BLOCK'S ADDRESS          GP99148
+SYMRLEN  DS    H                  USED LENGTH                   GP99148
+SYMTEXT  DS    CL56               SYM CARD TEXT                 GP99148
+         DS   0A                    FASTER, BIGGER, BETTER      GP99148
+SYMDATAL EQU   *-SYMDATA          SYM DATA LENGTH               GP99148
+         SPACE 2
+* ------------------------------------------------------------------- *
+*                                                                     *
+*        USING DEFINITIONS                                            *
+*                                                                     *
+* ------------------------------------------------------------------- *
+USNGDSCT DSECT
+USNGNEXT DS   A                   NEXT USING BLOCK
+USNGEYE  DS   CL8                 EYE CATCHER
+USNGDSNM DS   CL8                 DSECT'S NAME
+USNGLBNM DS   CL8                 LABEL WITHIN THE DSECT
+USNGDSA  DS   A                   RELATED DSECT BLOCK'S ADDRESS
+USNGLBA  DS   A                   LABEL BLOCK'S ADDRESS
+USNGDISP DS   A                   LABEL'S DISPLACEMENT INTO THE DSECT
+USNGBEGN DS   A                   STARTING DISPLACEMENT
+USNGEND  DS   A                   ENDING DISPLACEMENT
+USNGBASE DS   X                   BASE
+USNGFLAG DS   X                   FLAGS
+$USNGND  EQU  X'80'               .. NO DISPLACEMENTS
+         DS   0A                    FASTER, BIGGER, BETTER
+USNGL    EQU  *-USNGDSCT
+         SPACE 2
+* ------------------------------------------------------------------- *
+*                                                                     *
+*   VERIFY / REPLACE BLOCK (SAME MAPPING, DIFFERENT CHAINS)           *
+*                                                                     *
+* ------------------------------------------------------------------- *
+VERPSECT DSECT ,                                                GP10082
+VERPNEXT DS    A                  NEXT BLOCK                    GP10082
+VERPOFFS DS    A   1/2            OFFSET OF FIRST BYTE          GP10082
+VERPLEN  DS    F   2/2            TEXT LENGTH - 1               GP10082
+VERPTEXT DS    CL64               VERIFY / REPLACE TEXT         GP10082
+         DS    0A                   FASTER, BIGGER, BETTER      GP10082
+VERPL    EQU   *-VERPSECT                                       GP10082
+         SPACE 1
+         AIF  ('&DAPRT' EQ 'ON').DA020
+         PRINT ON
+.DA020   ANOP

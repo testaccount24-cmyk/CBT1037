@@ -1,0 +1,215 @@
+DAPU     TITLE 'DISASMPU PUNCH MODULE'
+*---------------------------------------------------------------------*
+*                                                                     *
+*  Module name: DISASMPU - Punch module                               *
+*                            Added 2010-02-15 from DISASMPR code      *
+*  Function:                                                          *
+*   DISASM was written in multiple CSECTs to keep any one module from *
+*   being excessively large and avoid some base register concerns due *
+*   to size, and to functionally divide up the over-all logic.  Since *
+*   punching is done in multiple modules (DISASM09, DISASM13) the     *
+*   code was moved to a separate module (from DISASM09).              *
+*                                                                     *
+*   The interface block is PUNBLOK (here referenced as PRMBLOK)       *
+*                                                                     *
+* ------------------------------------------------------------------- *
+         COPY  DISASMGB
+DISASMPU MODHEAD ,           ENTRY HOUSEKEEPING                 GP99140
+         LR    R10,R1                COPY PARM BLOCK ADDRESS
+         USING PRMBLOK,R10           DEFINE PARAMETER BLOCK BASE
+         CLI   PRMCMD,$PRMCLS        CLOSE FILES?               GP99138
+         BE    PRT0300               YES
+         TM    DCBOFLGS-IHADCB+DISPUNCH,DCBOFOPN   IS PUNCH FILE OPEN?
+         BO    PRT0010               YES
+         DEVTYPE DISPUNCH+DCBDDNAM-IHADCB,LINEWORK              GP10047
+         MVC   MAXLRECL,LINEWORK     COPY INFO FOR OPEN         GP10047
+         OPEN  (DISPUNCH,OUTPUT)     OPEN DISPUNCH
+         TM    DCBOFLGS-IHADCB+DISPUNCH,DCBOFOPN   IS IT OPEN NOW?
+         BO    PRT0010               YES                        GP99138
+         ABEND 1440,DUMP     OOPS?                              GP99138
+         SPACE 2
+* ------------------------------------------------------------------- *
+*    PROCESS SINGLE PUNCH LINE                                        *
+* ------------------------------------------------------------------- *
+PRT0010  DS    0H
+         MVI   PRMCC,C' '            CHANGE UNKNOWN TO SINGLE   GP99132
+         LA    R0,L'PRMCC+L'PRMDATA                             GP10047
+         LA    R1,PRMCC           PUNCH LINE W/CC               GP10047
+         BAL   R14,MSG#PUT           PUNCH                      GP10047
+         MVI   PRMCC,C' '            INTIALIZE PUNCH LINE       GP10047
+         B     PRT9900               EXIT
+         SPACE 1
+* ------------------------------------------------------------------- *
+*             CLOSE PUNCHER                                           *
+* ------------------------------------------------------------------- *
+PRT0300  TM    DCBOFLGS-IHADCB+DISPUNCH,DCBOFOPN   PUNCHER OPEN?
+         BNO   PRT9900               NO.. EXIT
+         CLOSE DISPUNCH              CLOSE PUNCHER
+         FREEPOOL DISPUNCH           AAND RELEASE BUFFERS       GP10047
+         SPACE 1
+* ------------------------------------------------------------------- *
+*             EXIT                                                    *
+* ------------------------------------------------------------------- *
+PRT9900  DS    0H
+         L     R13,4(,R13)           RESTORE REGISTER 13
+         LM    R14,R12,12(R13)       RESTORE ALL OTHER REGISTERS
+         SR    R15,R15               GIVE GOOD RETURN CODE
+         BR    R14                   RETURN TO CALLER
+         SPACE 2
+* ------------------------------------------------------------------- *
+*    PUNCH PROCESSING ROUTINE                                         *
+* ------------------------------------------------------------------- *
+         PUSH  USING                                            GP10047
+MSG#PUT  STM   R0,R15,MRSAVE                                    GP10047
+         LA    R8,DISPUNCH                                      GP10047
+         USING IHADCB,R8                                        GP10047
+         TM    DCBOFLGS,DCBOFOPN                                GP10047
+         BNO   MRRET                RETURN IF NO MESSAGE FILE   GP10047
+MRTEST   LR    R4,R1         PASSED TEXT ADDRESS                GP10047
+         LTR   R5,R0           AND LENGTH                       GP10047
+         BNP   MRRET                                            GP10047
+         TM    DCBRECFM,DCBRECCA+DCBRECCM                       GP10047
+         BNZ   MRTESTCC                                         GP10047
+         BCTR  R5,0          ADJUST LENGTH SANS CC              GP10047
+         LA    R4,1(,R4)     SKIP OVER CC                       GP10047
+         B     MRTESTNC                                         GP10047
+MRTESTCC TM    DCBRECFM,DCBRECCA                                GP10047
+         BO    MRTESTNC                                         GP10047
+         MVI   0(R4),X'09'   ***** SINGLE SPACE *****           GP10047
+MRTESTNC TM    DCBRECFM,DCBRECU                                 GP10047
+         BO    MRU                                              GP10047
+         TM    DCBRECFM,DCBRECF                                 GP10047
+         BO    MRF                                              GP10047
+MRU      CH    R5,DCBBLKSI                                      GP10047
+         BNH   *+8                                              GP10047
+         LH    R5,DCBBLKSI                                      GP10047
+         TM    DCBMACF2,DCBMRLCP    LOCATE MODE?                GP10047
+         BZ    MRULEN                                           GP10047
+         C     R5,MAXLRECL-DISPUNCH(,R8)    FITS?               GP10047
+         BNH   *+8                  YES                         GP10047
+         L     R5,MAXLRECL-DISPUNCH(,R8)    TRUNCATE            GP10047
+         LA    R3,4(,R5)            DATA + RDW LENGTH           GP10047
+         STH   R3,DCBLRECL                                      GP10047
+         PUT   IHADCB               GET A RECORD                GP10047
+         SLL   R3,16                                            GP10047
+         STCM  R3,15,0(R1)          BUILD RDW                   GP10047
+         LA    R0,4(,R1)                                        GP10047
+         LR    R1,R5                                            GP10047
+         MVCL  R0,R4                MOVE DATA TO BUFFER         GP10047
+         B     MRRET                                            GP10047
+MRULEN   STH   R5,DCBLRECL                                      GP10047
+MRF      LR    R0,R4                RECORD ADDRESS              GP10047
+         PUT   IHADCB,(0)                                       GP10047
+MRRET    LM    R0,R15,MRSAVE                                    GP10047
+         BR    R14                                              GP10047
+MRSAVE   DC    16A(0)                                           GP10047
+         POP   USING                                            GP10047
+         SPACE 1
+* ------------------------------------------------------------------ *
+*                                                                    *
+*              WORK AREAS                                            *
+*                                                                    *
+* ------------------------------------------------------------------ *
+         SPACE 1
+LINEWORK DC    0D'0',PL8'0'          LINES ADDED BY THIS I/O    GP10047
+         SPACE 1
+DISPUNCH DCB   DDNAME=DISPUNCH,DSORG=PS,MACRF=PM,EXLST=EXLSTPUN GP10047
+MAXLRECL DC    F'0'          LRECL AFTER OPEN; DEVTYPE BEFORE   GP10047
+EXLSTPUN DC    0A(0),X'85',AL3(PUNEXIT)                         GP10047
+         SPACE 2                                                GP10047
+*---------------------------------------------------------------------*
+*                                                                     *
+*   DCB OPEN EXIT FOR OUTPUT PUNCHING:                                *
+*      DEFAULT TO FB,80,800      USING MOVE MODE                      *
+*      IF OUTPUT IS V, CHANGE TO LOCATE MODE                          *
+*                                                                     *
+*---------------------------------------------------------------------*
+         PUSH  USING                                            GP10047
+         DROP  ,                                                GP10047
+         USING PUNEXIT,R15                                      GP10047
+         USING IHADCB,R1                                        GP10047
+PUNEXIT  N     R1,=X'00FFFFFF'    KILL OPEN FLAGS               GP10047
+         SR    R2,R2              CLEAR FOR DIVIDE              GP10047
+         SR    R3,R3              BLOCK SIZE                    GP10047
+         SR    R4,R4              RECORD LENGTH                 GP10047
+         ICM   R4,3,DCBLRECL      LOAD RECORD LENGTH            GP10047
+         ICM   R3,3,DCBBLKSI      LOAD BLOCK SIZE               GP10047
+         TM    DCBRECFM,DCBRECLA  ANY RECORD FORMAT ?           GP10047
+         BNZ   PUNEXITR           YES; KEEP                     GP10047
+         OI    DCBRECFM,DCBRECF+DCBRECBR+DCBRECCA  DEFAULT FBA  GP10047
+PUNEXITR MVI   DCBMACF2,DCBMRPUT+DCBMRMVP   SET MOVE MODE       GP10047
+         TM    DCBRECFM,DCBRECF   IS IT F OR U VS. V OR D?      GP10047
+         BNZ   PUNEXITM           YES; USE MOVE MODE            GP10047
+         MVI   DCBMACF2,DCBMRPUT+DCBMRLCP   SET LOCATE          GP10047
+PUNEXITM LTR   R4,R4              ANY RECORD LENGTH ?           GP10047
+         BNZ   PUNEXITL           YES                           GP10047
+         LA    R4,80              SET DEFAULT TEXT LENGTH       GP10047
+         TM    DCBRECFM,DCBRECF   U OR F?                       GP10047
+         BNZ   *+8                YES                           GP10047
+         LA    R4,4(,R4)          ALLOW FOR RDW                 GP10047
+         TM    DCBRECFM,DCBRECCC  CARRIAGE CONTROL ?            GP10047
+         BZ    PUNEXITL           NO                            GP10047
+         LA    R4,1(,R4)          ALLOW FOR IT                  GP10047
+PUNEXITL LTR   R3,R3              ANY BLOCKSIZE?                GP10047
+         BNZ   PUNEXITB           YES; CHECK LRECL IF F         GP10047
+         CLI   MAXLRECL-DISPUNCH+2(R1),X'20'    DASD OUTPUT?    GP10047
+         BE    PUNBLKDA      YES; USE TABLE                     GP10047
+         CLI   MAXLRECL-DISPUNCH+2(R1),X'08' UNIT REC OUTPUT?   GP10047
+         BE    PUNBLKUR      YES; UNBLOCKED                     GP10047
+         CLI   MAXLRECL-DISPUNCH+2(R1),X'01'   SPOOL OUTPUT?    GP10047
+         BE    PUNBLKSP      YES; USE 4K                        GP10047
+         L     R3,=A(32760)  ELSE USE MAX ALLOWED               GP10047
+         B     PUNEXITB                                         GP10047
+PUNBLKUR LA    R3,4(,R4)     USE RECORD LENGTH                  GP10047
+         B     PUNEXITB                                         GP10047
+PUNBLKSP L     R3,=A(4096)   USE ONE PAGE FOR SPOOLING          GP10047
+         B     PUNEXITB                                         GP10047
+PUNBLKDA SR    R6,R6         CLEAR FOR IC                       GP10047
+         TM    MAXLRECL-DISPUNCH+3(R1),X'F0'  FUNNIES?          GP10047
+         BNZ   PUNBLK10      YES; USE ARBITRARY VALUE           GP10047
+         ICM   R6,1,MAXLRECL-DISPUNCH+3(R1)                     GP10047
+         BNP   PUNBLK10      USE ARBITRARY VALUE                GP10047
+         SLL   R6,1          CONVERT TO OFFSET                  GP10047
+         LA    R6,DASDSIZE-2(R6)  POINT TO MAXBLOCK             GP10047
+         ICM   R4,3,0(R6)         GET BLOCK SIZE                GP10047
+         B     PUNEXITB                                         GP10047
+PUNBLK10 LA    R3,1374            ARBITRARY                     GP10047
+PUNEXITB TM    DCBRECFM,DCBRECF   F OR U ?                      GP10047
+         BZ    PUNEXITV           NO; V OR D                    GP10047
+         TM    DCBRECFM,DCBRECU   U?                            GP10047
+         BO    PUNEXITX           YES; KEEP IT                  GP10047
+         DR    R2,R4              GET BLOCKING FACTOR           GP10047
+         LTR   R3,R3              AT LEAST ONE ?                GP10047
+         BP    *+8                YES                           GP10047
+         LA    R3,1               SET TO ONE                    GP10047
+         MR    R2,R4              GET NEW BLOCK SIZE            GP10047
+         B     PUNEXITX           STASH BACK                    GP10047
+PUNEXITV LA    R2,4(,R4)     LRECL+4                            GP10047
+         CR    R2,R3         COMPARE TO BLOCK                   GP10047
+         BNH   PUNEXITX      OK                                 GP10047
+         OI    DCBRECFM,DCBRECSB  NEED SPANNED OR LARGER BLOCK  GP10047
+PUNEXITX STH   R3,DCBBLKSI   SET NEW BLOCK SIZE                 GP10047
+         STH   R4,DCBLRECL      AND RECORD LENGTH               GP10047
+         ST    R4,MAXLRECL-DISPUNCH(,R1)  SAVE FOR LOCATE MODE  GP10047
+         BR    R14           AND RETURN TO OPEN                 GP10047
+DASDSIZE DC    H'3625,20483,4892,27998,6144,14136,14660,7294' 2311-2314
+         DC    H'13030,8368,19069,17600,13030,23476,27998' 3330-3390
+         LTORG ,                                                GP10047
+         POP   USING                                            GP10047
+         SPACE 1                                                GP10047
+* ------------------------------------------------------------------ *
+*                                                                    *
+*              PUNCH MODULE INTERFACE BLOCK                          *
+*                                                                    *
+* ------------------------------------------------------------------ *
+PRMBLOK  PUNBLOK  TYPE=DSECT,PFX=PRM   MAKE UNIQUE NAMES        GP99138
+         SPACE 2
+* ------------------------------------------------------------------ *
+*                                                                    *
+*              COMMON DATA MAP                                       *
+*                                                                    *
+* ------------------------------------------------------------------ *
+DISASM00 DISASMCM TYPE=DSECT
+         PRINT NOGEN                                            GP99138
+         DCBD  DEVD=DA,DSORG=PS                                 GP99138
+         END  DISASMPU

@@ -1,0 +1,721 @@
+DA03     TITLE 'DISASM03 - LOAD/OBJECT MODULE READER'           GP10044
+         MACRO
+         PROC   &TYPE,&PROC1,&PROC2,&FLAGS
+         LCLC   &A,&OPTS
+&OPTS    SETC   '00'
+         AIF    (T'&FLAGS EQ 'O').PROC20
+&OPTS    SETC   '&FLAGS'
+.PROC20  ANOP
+         DC     X'&TYPE'             RECORD TYPE
+         DC     AL1(&OPTS)           FLAGS
+         AIF    (T'&PROC1 EQ 'O').PROC30
+         DC     AL2(&PROC1-DISASM03) DISPLACEMENT TO PROCESSING ROUTINE
+         AGO    .PROC40
+.PROC30  ANOP
+         DC     AL2(0)               NO PROCESSING ROUTINE
+.PROC40  ANOP
+         AIF    (T'&PROC2 EQ 'O').PROC50
+         DC     AL2(&PROC2-DISASM00) DISPLACEMENT TO MODULE'S ADDRESS
+         MEXIT
+.PROC50  ANOP
+         DC     AL2(0)               NO EXTERNAL PROCESSING MODULE
+         MEND
+         COPY   DISASMGB
+*--------------------------------------------------------------------*
+*                                                                    *
+*  Module name: DISASM03                                             *
+*                                                                    *
+*  Function:                                                         *
+*   Object module reader.  Many of the fields in the directory       *
+*   entry are interpreted and printed (module size, whether or not   *
+*   the module has the RENT, REUS, REFR flags, etc).  If the module  *
+*   name is an alias, the real module's directory info will be       *
+*   printed also.  The ESD and RLD info from the module is printed   *
+*   and control blocks built that will be used later for generating  *
+*   labels and ENTRY statements.  Module DISASM04 is called as a     *
+*   sub-function to interpret ESD data.  Module DISASM05 is called   *
+*   as a sub-function to interpret RLD data.                         *
+*                                                                    *
+*   If the module is successfully read and the requested CSECT       *
+*   located, COMMTXT will be set to the CSECT's storage address,     *
+*   COMMCSAD will be the CSECT's address within the load module,     *
+*   COMMCSEP will be the load module's entry point, COMMCSEA will    *
+*   be the CSECT's ending address within the load module, and        *
+*   COMMCSLN will the the CSECT's length.                            *
+*                                                                    *
+*--------------------------------------------------------------------*
+DISASM03 MODHEAD BASE=(R12,R8)     HOUSEKEEPING                 GP99140
+         DEVTYPE DISMOD+DCBDDNAM-IHADCB,COMMDWRD   LOOK AT DD   GP10044
+         LTR   R15,R15       DD FOUND ?                         GP10044
+         BNZ   BADFILE       HOW COME ?                         GP10044
+         CLI   COMMDWRD+2,0  DD DUMMY ?                         GP10044
+         BE    BADFILE       YES; NOT SUPPORTED                 GP10044
+         CLI   COMMDWRD+2,X'20'   DASD ?                        GP10044
+         BNE   READOBJ       NO; MUST BE SEQUENTIAL OBJECT DECK GP10044
+         RDJFCB DISMOD       GET THE JFCB                       GP10044
+         OBTAIN CAMLIST      GET THE FORMAT 1 DSCB FOR DISMOD   GP10044
+         LTR   R15,R15       F1 FOUND ?                         GP10044
+         BNZ   BADFILE       NOW COME ?                         GP10044
+         CLI   DS1DSORG+1,0  FUNNY DSORG ?                      GP10044
+         BNE   BADFILE       NO VSAM SUPPORT                    GP10044
+         TM    DS1DSORG,DS1DSGPO  PARTITIONED ?                 GP10044
+         BZ    READOBJ       NO; MUST BE OBJECT DECK            GP10044
+         TM    DS1RECFM,X'C0'     UNDEFINED ?                   GP10044
+         BNO   READOBJ       NO; MUST BE OBJECT DECK            GP10044
+         TM    JFCBIND1,JFCPDS  MEMBER NAME SPECIFIED ?         GP10044
+         BZ    NOMEM         NO                                 GP10044
+         MVC   COMMMOD,JFCBELNM   MOVE TO WORK AREA             GP10044
+         XC    JFCBELNM,JFCBELNM  RESET IT                      GP10044
+         NI    JFCBIND1,255-JFCPDS   AND IN JFCB                GP10044
+         OI    JFCBTSDM,JFCNWRIT+JFCVSL  NO REWRITE; MODIFIED   GP10044
+NOMEM    OPEN  (DISMOD,INPUT),TYPE=J OPEN DISMOD                GP10044
+         MVC   DIRMEM,COMMMOD        SET MEMBER NAME = MODULE NAME
+MOD0010  DS    0H
+         BLDL  DISMOD,BLDLIST        ISSUE BLDL
+         LTR   R15,R15               BLDL SUCCESSFUL?
+         BNZ   ERR0010               NO
+         MVC   MSG01MEM,DIRMEM       SET MEMBER NAME
+         TM    DIRINDS,$ALIAS        IS THIS AN ALIAS?
+         BO    MOD0020               YES
+         MVC   MSG01ALS,NO           NOT AN ALIAS
+         B     MOD0030
+MOD0020  DS    0H
+         MVC   MSG01ALS,YES          MEMBER IS AN ALIAS
+MOD0030  DS    0H
+         UNPK  MSG01TXT(7),DIRTTTR(4)
+         TR    MSG01TXT,COMMHXTR     TRANSLATE TO PRINTABLE     GP99132
+         MVI   MSG01TXT+6,C' '       RESTORE BLANK
+         UNPK  MSG01NTE(7),DIRNTTR(4)
+         TR    MSG01NTE,COMMHXTR     TRANSLATE TO PRINTABLE     GP99132
+         MVI   MSG01NTE+6,C' '       RESTORE BLANK
+         MVC   PRTDATA(MSG01L),MSG01 SET MESSAGE
+         BAL   R10,PRT0000           PRINT MESSAGE
+         SR    R1,R1                 CLEAR REGISTER
+         IC    R1,DIR#NOTE           NUMBER OF NOTE LIST ENTRIES
+         CVD   R1,COMMDWRD           CONVERT TO DECIMAL
+         MVC   MSG02NTE,=X'40202120' INITIALIZE WITH EDIT WORD
+         ED    MSG02NTE,COMMDWRD+6   EDIT NOTE LIST
+         UNPK  MSG02SZ(7),DIRMSIZE(4) UNPACK MODULE SIZE
+         TR    MSG02SZ,COMMHXTR      TRANSLATE TO PRINTABLE     GP99132
+         MVI   MSG02SZ+6,C' '        RESTORE BLANK
+         MVC   COMMCSEP+1,DIREPA     SAVE ENTRY POINT
+         UNPK  MSG02EPA(7),DIREPA(4) UNPACK ENTRY POINT
+         TR    MSG02EPA,COMMHXTR     TRANSLATE TO PRINTABLE     GP99132
+         MVI   MSG02EPA+6,C' '       RESTORE BLANK
+         MVC   MSG02MEM,COMMBLKS     CLEAR MEMBER NAME
+         TM    DIRINDS,$ALIAS        AN ALIAS?
+         BNO   MOD0040               NO
+         MVC   MSG02MEM,DIRRMEM      SET REAL MEMBER NAME
+MOD0040  DS    0H
+         MVC   PRTDATA(MSG02L),MSG02 SET MESSAGE
+         BAL   R10,PRT0000           PRINT MESSAGE
+         LA    R1,DIRSCTR            START OF VARIABLE PORTION
+         TM    DIRATTR3,$SSI         SSI INFO PRESENT?
+         BNO   MOD0050               NO
+         LA    R1,L'DIRSSI+1(,R1)    SKIP SSI INFO             CHG14201
+         SRL   R1,1                  ENFORCE SSI SECTION       ADD14201
+         SLL   R1,1                          ALIGNMENT         ADD14201
+MOD0050  DS    0H
+         TM    DIRINDS,$ALIAS        IS THIS AN ALIAS?
+         BNO   MOD0060               NO
+         LA    R1,L'DIRMEP+L'DIRRMEM(,R1)
+MOD0060  DS    0H
+         TM    DIRATTR1,$SCTR        SCATTER LOAD?
+         BNO   MOD0070               NO
+         LA    R1,8(,R1)             SKIP SCATTER STUFF
+MOD0070  DS    0H
+         UNPK  MSG03ATH(3),1(2,R1)   UNPACK AUTH CODE
+         TR    MSG03ATH,COMMHXTR     TRANSLATE TO PRINTABLE     GP99132
+         MVI   MSG03ATH+2,C' '       RESTORE BLANK
+         MVC   MSG03SSI,COMMBLKS     CLEAR SSI INFO
+         TM    DIRATTR3,$SSI         SSI INFO PRESENT?
+         BNO   MOD0100               NO
+         LA    R1,DIRSCTR            START OF VARIABLE PORTION
+         TM    DIRATTR1,$SCTR        SCATTER LOAD?
+         BNO   MOD0080               NO
+         TM    DIRINDS,$ALIAS        ALIAS?
+         BO    MOD0100               YES.. NO SSI
+         LA    R1,8(,R1)             SKIP SCATTER STUFF
+         B     MOD0090
+MOD0080  DS    0H
+         TM    DIRINDS,$ALIAS        ALIAS?
+         BNO   MOD0090               NO
+         LA    R1,L'DIRMEP+L'DIRRMEM(,R1)
+MOD0090  LA    R1,1(,R1)             FIX SSI INFO              ADD14201
+         SRL   R1,1                  ENFORCE SSI SECTION       ADD14201
+         SLL   R1,1                          ALIGNMENT         ADD14201
+         UNPK  MSG03SSI(9),0(5,R1)   UNPACK SSI INFO
+         TR    MSG03SSI,COMMHXTR     TRANSLATE TO PRINTABLE     GP99132
+         MVI   MSG03SSI+8,C' '       RESTORE BLANK
+MOD0100  DS    0H
+         TM    DIRATTR1,$RENT        RE-ENTRANT?
+         BO    MOD0110               YES
+         MVC   MSG03RNT,NO           NOT RE-ENTRANT
+         B     MOD0120
+MOD0110  DS    0H
+         MVC   MSG03RNT,YES          RE-ENTRANT
+MOD0120  DS    0H
+         TM    DIRATTR1,$REUS        REUSABLE?
+         BO    MOD0130               YES
+         MVC   MSG03RUS,NO           NOT REUSABLE
+         B     MOD0140
+MOD0130  DS    0H
+         MVC   MSG03RUS,YES          REUSABLE
+MOD0140  DS    0H
+         MVC   PRTDATA(MSG03L),MSG03 SET MESSAGE
+         BAL   R10,PRT0000           PRINT MESSAGE
+         TM    DIRATTR1,$OVRLY       OVERLAY?
+         BO    MOD0150               YES
+         MVC   MSG04OVR,NO           NOT OVERLAY
+         B     MOD0160
+MOD0150  DS    0H
+         MVC   MSG04OVR,YES          OVERLAY
+MOD0160  DS    0H
+         TM    DIRATTR1,$SCTR        SCATTER LOAD?
+         BO    MOD0170               YES
+         MVC   MSG04SCT,NO           NOT SCATTER LOAD
+         B     MOD0180
+MOD0170  DS    0H
+         MVC   MSG04SCT,YES          SCATTER LOAD
+MOD0180  DS    0H
+         TM    DIRATTR1,$EXEC        EXECUTABLE?
+         BO    MOD0190               YES
+         MVC   MSG04EXC,NO           NOT EXECUTABLE
+         B     MOD0200
+MOD0190  DS    0H
+         MVC   MSG04EXC,YES          EXECUTABLE
+MOD0200  DS    0H
+         TM    DIRATTR2,$REFR        REFRESHABLE?
+         BO    MOD0210               YES
+         MVC   MSG04RFR,NO           NO REFRESHABLE
+         B     MOD0220
+MOD0210  DS    0H
+         MVC   MSG04RFR,YES          REFRESHABLE
+MOD0220  DS    0H
+         MVC   PRTDATA(MSG04L),MSG04 SET MESSAGE
+         BAL   R10,PRT0000           PRINT MESSAGE
+         TM    DIRINDS,$ALIAS        AN ALIAS?
+         BNO   MOD0230               NO
+         FIND  DISMOD,DIRRMEM,D      FIND REAL MEMBER           GP10062
+         BXLE  R15,R15,MOD0228       FIND SUCCESSFUL?           GP10062
+         MVC   PRTDATA(L'EMSG19),EMSG19   MAKE MESSAGE PATTERN  GP10062
+         MVC   PRTDATA+24(8),DIRRMEM   SHOW NOT FOUND NAME      GP10062
+         BAL   R10,PRT0000           PRINT MESSAGE              GP10062
+         NI    DIRINDS,255-$ALIAS    RESET ALIAS?               GP10062
+         B     MOD0230               PROCESS ANYWAY AT ALIAS    GP10062
+MOD0228  MVC   PRTDATA(MSG05L),MSG05 SET MESSAGE                GP10062
+         MVI   PRTCC,C'0'            SET DOUBLE SPACE
+         BAL   R10,PRT0000           PRINT MESSAGE
+         MVC   DIRMEM,DIRRMEM        CHANGE NAMES
+         B     MOD0010               BLDL FOR REAL MEMBER
+MOD0230  DS    0H
+*  ALLOW CONCATENATION - THAT WAY I CAN HAVE ONE PROC FOR EVERYTHING
+*NUTS*   MVI   DIRMTTRZ+3,X'00'      FORCE ZERO                 GP99142
+*NUTS*   POINT DISMOD,DIRMTTRZ,TYPE=REL                         GP99142
+         FIND  DISMOD,DIRMTTRZ,C     POINT TO 1ST BLOCK         GP99142
+         LTR   R15,R15               POINT SUCCESSFUL?
+         BZ    MOD0260               YES
+         STC   R15,POINTR15          SAVE RETURN CODE
+         STC   R0,POINTR0            SAVE REASON CODE
+         LA    R1,PNTMSGS            MESSAGE TABLE ADDRESS
+MOD0240  DS    0H
+         CLI   0(R1),X'FF'           END OF TABLE?
+         BE    ERR0070               YES
+         CLC   PNTCODE,0(R1)         MESSAGE FOUND?
+         BE    MOD0250               YES
+         LA    R1,PNTMSGL(,R1)       NEXT MESSAGE
+         B     MOD0240               LOOP
+MOD0250  DS    0H
+         MVC   PRTDATA(PNTMSGL-2),2(R1)
+         OI    COMMFLAG,$ERROR+$ABORT
+         BAL   R10,PRT0000           PRINT MESSAGE
+         B     EXIT0000              AND EXIT
+MOD0260  DS    0H
+         TM    MODFLAG,$MODEOF       EOF FLAG ON?
+         BO    CALLSYMT              YES; CALL SYMT PROCESSOR   GP99148
+         BAL   R10,READ0000          READ A RECORD
+         ITRACE ID=FINDPROC,                                           +
+               DATA1=(R3)            .. CAPTURE 8 BYTES OF DATA
+         LA    R9,PROCTBLE           FIRST PROCESSOR TABLE ENTRY
+         USING PROCDSCT,R9           DEFINE BASE
+MOD0270  DS    0H
+         CLI   0(R9),X'FF'           END OF TABLE
+         BE    MOD0310               NOT LOCATED.. FORGET IT
+         CLC   PROCTYPE,0(R3)        RECORD TYPE FOUND?
+         BE    MOD0280               YES
+         LA    R9,PROCL(,R9)         NEXT ENTRY
+         B     MOD0270               LOOP
+MOD0280  DS    0H
+         ITRACE ID=PROCFND,                                            +
+               DATA1=PROCTYPE
+         TM    PROCFLAG,$CSECT       CSECT REQUIRED?
+         BNO   MOD0290               NO
+         TM    COMMFLAG,$CSECT       CSECT LOCATED?
+         BNO   ERR0060               NO
+         TM    0(R3),X'08'           END OF MODULE?
+         BNO   MOD0290               NO
+         ITRACE ID=EOF
+         OI    MODFLAG,$MODEOF       SET EOF FLAG
+MOD0290  DS    0H
+         SR    R15,R15               CLEAR REGISTER
+         ICM   R15,3,PROCXTNL        EXTERNAL PROCESSING MODULE DISP
+         BZ    MOD0300               NO EXTERNAL MODULE
+         AR    R15,R11               PLUS DISASM00 BASE ADDRESS
+         L     R15,0(,R15)           RECORD PROCESSOR ENTRY POINT
+         ITRACE ID=CALLXTNL,         CALLING EXTERNAL RECORD PROCESSOR +
+               RDATA1=R15            .. PROCESSOR'S ENTRY POINT ADDR
+         BALR  R14,R15               LINK TO PROCESSOR
+MOD0300  DS    0H
+         SR    R15,R15               CLEAR REGISTER
+         ICM   R15,3,PROCINTL        INTERNAL PROCESSING RTN DISP
+         BZ    MOD0260               NO INTERNAL PROCESSING MODULE
+         AR    R15,R12               PLUS BASE REG
+         ITRACE ID=CALLINTL,         CALLING INTERNAL RECORD PROCESSOR +
+               RDATA1=R15            .. PROCESSOR'S ENTRY POINT ADDR
+         BR    R15                   CALL INTERNAL RECORD PROCESSOR
+MOD0310  DS    0H
+         ITRACE ID=NOPROC            NO PROCESSOR FOR THIS RECORD TYPE
+         B     MOD0260               READ NEXT RECORD
+         SPACE 1
+CSCT0000 DS    0H
+         ITRACE ID=CSECT
+         L     R3,COMMIO             I/O AREA ADDRESS
+         TM    0(R3),X'02'           RLD AND CSECT?
+         BO    CSCT0010              YES
+         LA    R4,16(,R3)            CESD ENTRY NUMBER ADDRESS
+         B     CSCT0020
+CSCT0010 DS    0H
+         LH    R4,6(,R3)             RLD SECTION LENGTH
+         LA    R4,16(R3,R4)          CESD ENTRY NUMBER ADDRESS
+CSCT0020 DS    0H
+         LH    R5,4(,R3)             CSECT INFO LENGTH
+         SRL   R5,2                  CONVERT TO NUMBER OF ENTRIES
+         ITRACE ID=CSECTNBR,                                           +
+               RDATA1=R4,            .. CSECT DATA'S ADDRESS           +
+               RDATA2=R5             .. NUMBER OF ENTRIES
+         SR    R6,R6                 INITIALIZE OFFSET
+         SR    R7,R7                 ASSUME LENGTH IS ZERO
+CSCT0030 DS    0H
+         CLC   COMMESID,0(R4)        CORRECT ESD ID?
+         BE    CSCT0040              YES
+         AH    R6,2(,R4)             PLUS LENGTH OF THIS ESD
+         LA    R4,4(,R4)             NEXT ESD ID ENTRY
+         BCT   R5,CSCT0030           LOOP
+         B     CSCT0050
+CSCT0040 DS    0H
+         ITRACE ID=ESDFND,                                             +
+               RDATA1=R4             .. ESD ADDRESS
+         LH    R7,2(,R4)             TEXT LENGTH
+CSCT0050 DS    0H
+         SR    R2,R2                 CLEAR REGISTER
+         ICM   R2,7,9(R3)            ASSIGNED ADDRESS
+         ITRACE ID=READTEXT
+         BAL   R10,READ0000          READ NEXT TEXT BLOCK
+         LTR   R7,R7                 TEXT LENGTH ZERO?
+         BZ    MOD0260               YES
+         AR    R2,R6                 ADDRESS + DISPLACEMENT
+         S     R2,COMMCSAD           MINUS STARTING ADDRESS
+         A     R2,COMMTXT            PLUS TEXT'S BASE ADDRESS
+         A     R6,COMMIO             DISP + I/O BASE
+         ITRACE ID=MOVETEXT
+         LR    R3,R7                 COPY LENGTH
+         MVCL  R2,R6                 COPY TEXT (WHEW!)
+         B     MOD0260               DONE
+         SPACE 2                                                GP99148
+SYMT0000 ITRACE ID=CSECT                                        GP99148
+         L     R3,COMMIO             I/O AREA ADDRESS           GP99148
+         CLC   =X'02E2E8D4',4(R3)    REALLY SYM BLOCK?          GP99148
+         BNE   SYMT0990              NO; MAKE A NASTY           GP99148
+         SR    R5,R5                                            GP99148
+         ICM   R5,7,1(R3)    GET LENGTH OF CONTENTS             GP99148
+         BNP   SYMT0990      HUH?                               GP99148
+         SR    R4,R4                                            GP99148
+         D     R4,=F'80'     NUMBER OF CARD IMAGES              GP99148
+         LTR   R4,R4         ANY REMAINDER?                     GP99148
+         BNZ   SYMT0990      YES; FAIL                          GP99148
+         LTR   R5,R5         ANY AT ALL ?                       GP99148
+         BNP   SYMT0990      BOO                                GP99148
+         LA    R3,4(,R3)     POINT TO FIRST RECORD              GP99148
+         ICM   R6,15,SYMPOINT  GET TAIL OF QUEUE                GP99148
+         BNZ   SYMT0050      USE IT                             GP99148
+         LA    R6,COMMSYMP   ELSE GET POINTER TO ROOT           GP99148
+SYMT0050 CLC   =X'02E2E8D4',0(R3)    REALLY SYM RECORD?         GP99148
+         BNE   MOD0260       'NORMAL' IN LAST BLOCK (!)         GP99148
+         SR    R2,R2                                            GP99148
+         ICM   R2,3,10(R3)   GET CARD'S TEXT LENGTH             GP99148
+         BNP   SYMT0990      TOO BAD                            GP99148
+         CH    R2,=H'56'     LARGER THAN DESIGN LIMIT?          GP99148
+         BH    SYMT0990      YES; HUH?                          GP99148
+         LA    R0,SYMDATAL   GET BLOCK SIZE                     GP99148
+         BAL   R14,GETMAIN   GET STORAGE                        GP99148
+         ST    R1,0(,R6)     CHAIN IT TO OLD BLOCK              GP99148
+         USING SYMDATA,R1    DECLARE IT                         GP99148
+         STH   R2,SYMRLEN    STASH LENGTH                       GP99148
+         BCTR  R2,0                                             GP99148
+         EX    R2,EXMVCSYM   MOVE SYMBOL TABLE TEXT             GP99148
+         LA    R3,80(,R3)    POINT TO NEXT CARD IMAGE           GP99148
+         LR    R6,R1         SWAP OVER                          GP99148
+         ST    R6,SYMPOINT   SAVE POINTER TO TAIL OF QUEUE      GP99148
+         BCT   R5,SYMT0050   TRY AGAIN                          GP99148
+         B     MOD0260       GET ANOTHER BLOCK                  GP99148
+EXMVCSYM MVC   SYMTEXT(0),16(R3)  MOVE SYM TEXT                 GP99148
+         DROP  R1                                               GP99148
+         SPACE 1                                                GP99148
+SYMT0990 TM    MODFLAG,$SYMERR   PRIOR MESSAGE?                 GP99148
+         BNZ   MOD0260           YES; JUST LOOP AGAIN           GP99148
+         OI    MODFLAG,$SYMERR   SET MESSAGE ISSUED             GP99148
+         LA    R1,EMSG20     POINT TO MESSAGE                   GP99148
+         BAL   R14,PRINTMSG  PRINT IT                           GP99148
+         B     MOD0260       CONTINUE                           GP99148
+         SPACE 2                                                GP99148
+READ0000 DS    0H
+         ITRACE ID=READ
+         L     R3,COMMIO             I/O BUFFER'S ADDRESS
+         XC    MODDECB,MODDECB       CLEAR ECB
+         READ  MODDECB,              READ LOAD MODULE                  +
+               SF,                   .. SEQUENTIALLY FORWARD           +
+               DISMOD,               .. FROM LODLIB DATA SET           +
+               (R3),                 .. I/O AREA'S ADDRESS             +
+               $IOSIZE               .. LENGTH FROM DCB         GP10044
+         CHECK MODDECB               WAIT FOR READ
+         BR    R10                   RETURN
+EOD00000 DS    0H
+         ITRACE ID=EOD
+         OI    COMMFLAG,$ERROR+$ABORT SET FLAGS
+         MVC   PRTDATA(EMSG3L),EMSG3 SET MESSAGE
+         BAL   R10,PRT0000           PRINT MESSAGE
+         B     EXIT0000              EXIT
+         SPACE 1
+*---------------------------------------------------------------------*
+*   DISMOD DD DOESN'T LOOK LIKE LOAD LIBRARY - TRY OBJECT DECK        *
+*---------------------------------------------------------------------*
+READOBJ  ITRACE ID=READOBJ                                      GP10044
+         L     R15,=V(DISASM13)   GET OBJECT DECK PROCESSOR     GP10044
+         LA    R0,INFMJFCB        POINT TO JFCB                 GP10044
+         LA    R1,IECSDSL1        POINT TO FMT 1 SANS DSN       GP10044
+         L     R13,4(,R13)           RESTORE REGISTER 13        GP10044
+         L     R14,12(,R13)          RESTORE REGISTER 14        GP10044
+         LM    R2,R12,28(R13)     RESTORE OTHER REGISTERS       GP10044
+         BR    R15                GO TO DISASM13                GP10044
+         SPACE 1
+ERR0010  DS    0H
+         MVI   BLDLR0,0              INITIALIZE REASON CODE
+         STC   R15,BLDLR15           SAVE R15
+         CLI   BLDLR15,8             R15 = 8?
+         BNE   ERR0020               NO
+         STC   R0,BLDLR0             SAVE R0
+ERR0020  DS    0H
+         LA    R1,BLDLMSGS           FIRST BLDL MESSAGE
+ERR0030  DS    0H
+         CLI   0(R1),X'FF'           END OF TABLE?
+         BE    ERR0050               YES
+         CLC   BLDLCODE,0(R1)        PROPER MESSAGE FOUND?
+         BE    ERR0040               YES
+         LA    R1,BLDLMSGL(,R1)      NEXT MESSAGE
+         B     ERR0040               LOOP
+ERR0040  DS    0H
+         MVC   PRTDATA(BLDLMSGL-2),2(R1)
+         BAL   R10,PRT0000           PRINT MESSAGE
+         OI    COMMFLAG,$ABORT       SET ABORT FLAG
+         B     EXIT0000              AND EXIT
+ERR0050  DS    0H
+         ITRACE ID=INVBLDLC,         INVALID BLDLCODE                  +
+               DATA1=BLDLCODE        ..
+         BAL   R14,TRACEPRT  PRINT TRACE                        GP99146
+         LA    R1,ABEND002   SET ABEND CODE (NOT ADDRESS)       GP99146
+         ABEND (1),DUMP,,USER                                   GP99146
+         SPACE 1                                                GP10044
+BADFILE  MVC   PRTDATA(EMSG00L),EMSG00                          GP10044
+         OI    COMMFLAG,$ERROR+$ABORT                           GP10044
+         BAL   R10,PRT0000           PRINT MESSAGE              GP10044
+         B     EXIT0000              AND EXIT                   GP10044
+ERR0060  DS    0H
+         MVC   PRTDATA(EMSG01L),EMSG01
+         OI    COMMFLAG,$ERROR+$ABORT
+         BAL   R10,PRT0000           PRINT MESSAGE
+         B     EXIT0000              AND EXIT
+ERR0070  DS    0H
+         MVC   PRTDATA(EMSG02L),EMSG02
+         OI    COMMFLAG,$ERROR+$ABORT
+         BAL   R10,PRT0000           PRINT MESSAGE
+         B     EXIT0000              AND EXIT
+PRT0000  DS    0H
+         TM    COMMFLAG,$ERROR       ERROR MESSAGE?             GP99132
+         BNZ   PRT0005               YES; PRINT IT              GP99132
+         TM    PRINTFG1,$PFDIR       PRINT DIRECTORY DATA ?     GP99132
+         BNZ   PRT0005               YES                        GP99132
+         MVI   PRTDATA,C' '          JUST CLEAR                 GP99132
+         MVC   PRTDATA+1(L'PRTDATA-1),PRTDATA   PRINT BUFFER    GP99132
+         BR    R10                   JUST RETURN                GP99132
+PRT0005  DS    0H                                               GP99132
+         TM    MODFLAG,$SUBH         HAS SUB-HEADING BEEN PRINTED?
+         BO    PRT0010               YES
+         MVC   COMMSUBH(SUBHD1L),SUBHD1
+         LA    R1,SUBHD1L            SUBHEADING LENGTH
+         STH   R1,COMMSUBL           SET LENGTH
+         OI    MODFLAG,$SUBH         SET FLAG
+         MVI   PRTCMD,$PRTSUBH       SET COMMAND
+         BAL   R14,PRINTDAT          LINK TO PRINT MODULE       GP99138
+PRT0010  BAL   R14,PRINTREC                                     GP99138
+         BR    R10                   RETURN
+         SPACE 2                                                GP99148
+CALLSYMT ICM   R0,15,COMMSYMP  DID WE FIND ANY SYMBOL TABLE ENTRIES?
+         BZ    ROUNDUP         NO; TEST FOR ROUNDING            GP10071
+         L     R15,A55         GET ADDRESS OF SYMT PROCESSOR    GP99148
+         BALR  R14,R15         CALL IT                          GP99148
+         SPACE 1
+ROUNDUP  TM    COMMOPFG,$OFROUND     ROUND TO DOUBLE-WORD?      GP10071
+         BZ    EXIT0000                NO                       GP10071
+         L     R4,COMMCSLN           REMEMBER ORIGINAL SIZE     GP10071
+         L     R3,COMMTXT              AND LOAD ADDRESS         GP10071
+         LA    R2,7(,R4)             AUGMENT FOR ROUND/TRUNC    GP10072
+         N     R2,=X'7FFFFFF8'       ROUND TO DOUBLE-WORD       GP10071
+         C     R2,COMMCSLN           PADDED ?                   GP10071
+         BE    EXIT0000              NO                         GP10071
+         ST    R2,COMMCSLN           SAVE                       GP10071
+         L     R1,COMMCSAD           GET CSECT OFFSET           GP10072
+         AR    R1,R2                 ADDRESS + LENGTH           GP10071
+         BCTR  R1,0                  MINUS 1                    GP10071
+         ST    R1,COMMCSEA           SAVE ENDING ADDRESS        GP10071
+         LR    R15,R2                CURRENT LENGTH             GP10071
+         SR    R15,R4                  LESS ORIGINAL            GP10071
+         BCTR  R15,0                                            GP10071
+         AR    R3,R4              POINT TO PADDING              GP10071
+         EX    R15,EXCLCPAD          CLEAR IT                   GP10071
+         LA    R15,X'F1'(,R15)       CONVERT TO PRINTABLE       GP10071
+         MVC   PRTDATA(EMSG18L),EMSG18 SET MESSAGE              GP10071
+         STC   R15,PRTDATA+EMSG18L-15 SHOW PADDING              GP10071
+         BAL   R10,PRT0000           PRINT MESSAGE              GP10071
+EXCLCPAD XC    0(0,R3),0(R3)      CLEAR PADDING                 GP10071
+         SPACE 2                                                GP99148
+EXIT0000 DS    0H
+         ITRACE ID=EXIT
+         CLOSE DISMOD                CLOSE DISMOD
+         L     R13,4(,R13)           RESTORE REGISTER 13
+         LM    R14,R12,12(R13)       RESTORE ALL OTHER REGISTERS
+         SR    R15,R15               GIVE GOOD RETURN CODE
+         BR    R14                   RETURN TO CALLER
+         SPACE 2
+         LTORG
+*---------------------------------------------------------------------*
+*                                                                     *
+*              WORK AREAS                                             *
+*                                                                     *
+*---------------------------------------------------------------------*
+SYMPOINT DC    A(0)          LAST ENTRY IN SYM CHAIN            GP99148
+* ------------------------------------------------------------------- *
+BLDLIST  DS    0F                                                     |
+         DC    H'1'                  ONE MEMBER                       |
+         DC    H'80'                 LENGTH PER MEMBER                |
+DIRDATA  DS    CL80                                                   |
+         ORG   DIRDATA                                                |
+DIRMEM   DC    CL8' '                MEMBER NAME                      |
+DIRMTTRZ DC    XL4'00000000'         MEMBER'S RELATIVE ADDRESS        |
+         DC    XL1'00'                                                |
+DIRINDS  DC    X'00'                 INDICATORS                       |
+$ALIAS   EQU   X'80'                 .. MEMBER IS AN ALIAS            |
+DIRTTTR  DC    XL3'000000'           TEXT'S RELATIVE ADDRESS          |
+         DC    XL1'00'                                                |
+DIRNTTR  DC    XL3'000000'           NOTE LIST (OR SCATTER LIST) TTR
+DIR#NOTE DC    X'00'                 NUMBER OF NOTE LIST ENTRIES      D
+DIRATTR1 DC    X'00'                 ATTRIBUTE FLAGS                  A
+$RENT    EQU   X'80'                 .. RE-ENTRANT                    T
+$REUS    EQU   X'40'                 .. REUSABLE                      A
+$OVRLY   EQU   X'20'                 .. OVERLAY
+$TEST    EQU   X'10'                 .. UNDER TEST                    R
+$LDONLY  EQU   X'08'                 .. LOAD ONLY                     E
+$SCTR    EQU   X'04'                 .. SCATTER FORMAT                T
+$EXEC    EQU   X'02'                 .. EXECUTABLE                    U
+$1TEXT   EQU   X'01'                 .. 1 TEXT, NO RLD RECORDS        R
+DIRATTR2 DC    X'00'                 ATTRIBUTE FLAGS                  N
+$NOLINK1 EQU   X'80'                 .. NOT PROCESSABLE BY LINK EDIT  E
+$ORGZERO EQU   X'40'                 .. TEXT ORIGIN IS ZERO           D
+$EPZERO  EQU   X'20'                 .. ENTRY POINT IS ZERO
+$NORLD   EQU   X'10'                 .. NO RLD RECORDS                B
+$NOLINK2 EQU   X'08'                 .. NOT PROCESSABLE BY LINK EDIT  Y
+$TESTRAN EQU   X'04'                 .. CONTAINS TESTRAN SYMBOLS
+$LINK    EQU   X'02'                 .. CREATED BY LINKAGE EDITOR     B
+$REFR    EQU   X'01'                 .. REFRESHABLE                   L
+DIRMSIZE DC    XL3'000000'           MODULE'S SIZE                    D
+DIRTXTL  DC    XL2'0000'             TEXT RECORD SIZE                 L
+DIREPA   DC    XL3'000000'           ENTRY POINT
+DIRATTR3 DC    X'00'                                                  |
+$OSLINK  EQU   X'80'                 .. PROCESSED BY O/S LINK EDITOR  |
+$PALIGN  EQU   X'20'                 .. PAGE ALIGNMENT REQUIRED       |
+$SSI     EQU   X'10'                 .. SSI PRESENT                   |
+DIRATTR4 DC    X'00'                 ATTRIBUTES                       |
+$RANY    EQU   X'10'                 .. RMODE=ANY                     |
+$AA31    EQU   X'08'                 .. AMODE=31 (ALIAS)              |
+$AA24    EQU   X'04'                 .. AMODE=24 (ALIAS)              |
+$AM31    EQU   X'02'                 .. AMODE=31 (MAIN)               |
+$AM24    EQU   X'01'                 .. AMODE=24 (MAIN)               |
+DIR#RLD  DC    X'00'                 NUMBER OF RLD'S AFTER 1ST TEXT   |
+DIRSCTR  DC    XL2'0000'             SCATTER LIST LENGTH              |
+DIRTRAN  DC    XL2'0000'             TRANSLATION TABLE LENGTH         |
+DIRTCEST DC    XL2'0000'             CESD NUMBER FOR 1ST TXT RECORD   |
+DIRECESD DC    XL2'0000'             CESD NUMBER FOR ENTRY POINT      |
+         ORG   DIRSCTR               RESET TO VARIABLE PORTION        |
+DIRMEP   DC    XL3'000000'           ENTRY POINT OF MEMBER NAME       |
+DIRRMEM  DC    CL8' '                REAL MEMBER NAME IF ALIAS        |
+DIRSSI   DC    XL4'00000000'         SSI INFO                         |
+DIRAUTHL DC    XL1'00'               AUTH CODE LENGTH                 |
+DIRAUTHC DC    XL1'00'               AUTH CODE                        |
+         ORG   DIRDATA+80                                             |
+* ------------------------------------------------------------------- *
+         SPACE 1
+MODFLAG  DC    X'00'                 PROGRAM FLAGS/SWITCHES
+$SUBH    EQU   X'80'                 .. SUBHEADING PRINTED
+$MODEOF  EQU   X'40'                 .. END OF CONTROL DATA
+$SYMERR  EQU   X'20'                 .. ERROR IN SYMBOL TABLE ENTRY
+BLDLCODE DS    0XL2                  BLDL RETURN CODE/REASON CODE
+BLDLR15  DC    X'00'                 .. R15
+BLDLR0   DC    X'00'                 .. R0
+PNTCODE  DS    0XL2                  POINT RETURN CODE/REASON CODE
+POINTR15 DC    X'00'                 .. R15
+POINTR0  DC    X'00'                 .. R0
+NO       DC    CL3'NO'
+YES      DC    CL3'YES'
+SUBHD1   DC    C' LOAD MODULE ATTRIBUTES '
+SUBHD1L  EQU   *-SUBHD1
+MSG01    DS    0C
+         DC    CL12'MEMBER NAME:'
+MSG01MEM DC    CL08' '
+         DC    CL10' '
+         DC    CL06'ALIAS:'
+MSG01ALS DC    CL03' '
+         DC    CL21' '
+         DC    CL09'TEXT TTR:'
+MSG01TXT DC    CL06' '
+         DC    CL15' '
+         DC    CL13'NOTELIST TTR:'
+MSG01NTE DC    CL06' '
+         DC    C' '
+MSG01L   EQU   *-MSG01
+MSG02    DS    0C
+         DC    CL17'NOTELIST ENTRIES:'
+MSG02NTE DC    CL04' '
+         DC    CL09' '
+         DC    CL17'LOAD MODULE SIZE:'
+MSG02SZ  DC    CL06' '
+         DC    CL07' '
+         DC    CL12'ENTRY POINT:'
+MSG02EPA DC    CL06' '
+         DC    CL12' '
+         DC    CL17'REAL MEMBER NAME:'
+MSG02MEM DC    CL8' '
+MSG02L   EQU   *-MSG02
+MSG03    DS    0C
+         DC    CL10'AUTH CODE:'
+MSG03ATH DS    CL02' '
+         DC    CL18' '
+         DC    CL09'SSI INFO:'
+MSG03SSI DC    CL08' '
+         DC    CL13' '
+         DC    CL11'RE-ENTRANT:'
+MSG03RNT DC    CL03' '
+         DC    CL16' '
+         DC    CL09'REUSABLE:'
+MSG03RUS DC    CL03' '
+MSG03L   EQU   *-MSG03
+MSG04    DS    0C
+         DC    CL08'OVERLAY:'
+MSG04OVR DS    CL03' '
+         DC    CL19' '
+         DC    CL13'SCATTER LOAD:'
+MSG04SCT DC    CL03' '
+         DC    CL14' '
+         DC    CL11'EXECUTABLE:'
+MSG04EXC DC    CL03' '
+         DC    CL16' '
+         DC    CL12'REFRESHABLE:'
+MSG04RFR DC    CL03' '
+MSG04L   EQU   *-MSG04
+MSG05    DC    48C'-'
+         DC    CL24' REAL MODULE ATTRIBUTES '
+         DC    48C'-'
+MSG05L   EQU   *-MSG05
+EMSG00   DC    C'DISASM0300E DISMOD DD NOT USABLE'              GP10044
+EMSG00L  EQU   *-EMSG00                                         GP10044
+EMSG01   DC    C'DISASM0301E SPECIFIED CSECT NOT FOUND'
+EMSG01L  EQU   *-EMSG01
+EMSG02   DC    C'DISASM0302E UNKNOWN RETURN CODE FROM POINT MACRO'
+EMSG02L  EQU   *-EMSG02
+EMSG3    DC    C'DISASM0303E DCB EODAD ROUTINE DRIVEN, END OF CONTROL R+
+               ECORDS NOT DETECTED'
+EMSG3L   EQU   *-EMSG3
+EMSG20   DC    AL1(L'EMSG20T)                                   GP99148
+EMSG20T  DC    C'DISASM0320E SYM RECORD HAS UNKNOWN FORMAT'     GP99148
+EMSG19   DC    C'DISASM0319W MAIN MEMBER xxxxxxxx NOT FOUND; WIDOWED AL*
+               IAS?'                                            GP10062
+EMSG18   DC    C'DISASM0318I CSECT SIZE ROUNDED UP BY n PADDING BYTES'
+EMSG18L  EQU   *-EMSG18                                         GP10071
+BLDLMSGS DS    0C
+         DC    X'0400',CL55'DISASM0304E MODULE DOES NOT EXIST IN DISMOD+
+                LIBRARY'
+BLDLMSGL EQU   *-BLDLMSGS
+         DC    X'0800',CL55'DISASM0305E PERMANENT I/O ERROR'
+         DC    X'0804',CL55'DISASM0306E INSUFFICIENT VIRTUAL STORAGE'
+         DC    X'0808',CL55'DISASM0307E DEB NOT IN KEY 0-7'
+         DC    X'FF'
+PNTMSGS  DS    0C
+         DC    X'0400',CL55'DISASM0308E DEVICE DOES NOT SUPPORT BLOCK I+
+               DENTIFIER'
+PNTMSGL  EQU   *-PNTMSGS
+         DC    X'0801',CL55'DISASM0309E INCORRECT PARAMETER'
+         DC    X'0802',CL55'DISASM0310E INCORRECT DEB OR DEBCHK ERROR'
+         DC    X'0803',CL55'DISASM0311E ENVIRONMENTAL ERROR'
+         DC    X'080B',CL55'DISASM0312E UNSUCCESSFUL CALL TO ESTAE'
+         DC    X'080C',CL55'DISASM0313E UNSUCCESSFUL GETMAIN'
+         DC    X'0C00',CL55'DISASM0314E INPUT/OUTPUT ERROR'
+         DC    X'FF'
+PROCTBLE DS    0X
+         PROC  01,CSCT0000,,$CSECT            CSECT RECORDS
+         PROC  02,,A05,$CSECT                 RLD RECORDS
+         PROC  03,CSCT0000,A05,$CSECT         CSECT AND RLD RECORDS
+         PROC  05,CSCT0000,,$CSECT            CSECT RECORDS
+         PROC  06,,A05,$CSECT                 RLD RECORDS
+         PROC  07,CSCT0000,A05,$CSECT         CSECT AND RLD RECORDS
+         PROC  0D,CSCT0000,,$CSECT            CSECT RECORDS
+         PROC  0E,,A05,$CSECT                 RLD RECORDS
+         PROC  0F,CSCT0000,A05,$CSECT         CSECT AND RLD RECORDS
+         PROC  20,,A04                        CESD RECORDS
+         PROC  40,SYMT0000   SYMBOL TABLE RECORDS (SAVE FOR DISASM55)
+         DC    X'FF'
+*---------------------------------------------------------------------*
+*                                                                     *
+*              OBJECT MODULE LIBRARY DCB                              *
+*                                                                     *
+*---------------------------------------------------------------------*
+DISMOD   DCB   DDNAME=DISMOD,        OBJECT MODULE LIBRARY DCB         +
+               DSORG=PO,             .. PARTITIONED DATA SET           +
+               RECFM=U,              .. UNDEFINED RECORD FORMAT        +
+               EODAD=EOD00000,       .. END OF DATA                    +
+               EXLST=EXITLIST,       .. JFCB EXIT LIST                 +
+               MACRF=R               .. READ ONLY
+EXITLIST DC    A(X'87000000'+INFMJFCB) JFCB ADDRESS             GP10044
+         IEFJFCBN ,          MY JFCB                            GP10044
+         SPACE 1                                                GP10044
+CAMLIST  CAMLST SEARCH,JFCBDSNM,JFCBVOLS,DS1FMTID               GP10044
+         IECSDSL1 1          MY FMT 1 DSCB                      GP10044
+         DS    XL128         JUST IN CASE ?                     GP10044
+         SPACE 2
+*---------------------------------------------------------------------*
+*                                                                     *
+*              PROCESSOR TABLE                                        *
+*                                                                     *
+*---------------------------------------------------------------------*
+PROCDSCT DSECT
+PROCTYPE DS   X                     RECORD CODE
+PROCFLAG DS   X                     FLAGS
+PROCINTL DS   AL2                   INTERNAL PROCESSING RTN
+PROCXTNL DS   AL2                   EXTERNAL PROCESSING MODULE
+PROCL    EQU  *-PROCDSCT
+*---------------------------------------------------------------------*
+*                                                                     *
+*              COMMON DATA MAP                                        *
+*                                                                     *
+*---------------------------------------------------------------------*
+DISASM00 DISASMCM TYPE=DSECT
+         COPY  DISASMDA                                         GP99148
+         DCBD  DEVD=DA                                          GP10044
+         END  DISASM03
