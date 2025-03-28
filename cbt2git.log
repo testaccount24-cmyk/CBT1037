@@ -1,0 +1,8 @@
+2025-03-28 17:13:57.446851 - Received CBT.V508.FILE1037.PDS from FILE1037.XMI 
+2025-03-28 17:13:57.448943 - Found $$$#DATE.txt (text/plain) in CBT.V508.FILE1037.PDS, moved to PDS/$$$#DATE
+2025-03-28 17:13:57.450227 - Found $$DOC.txt (text/plain) in CBT.V508.FILE1037.PDS, moved to PDS/$$DOC
+2025-03-28 17:13:57.450829 - Found $RECEIVE.jcl (text/plain) in CBT.V508.FILE1037.PDS, moved to PDS/$RECEIVE
+2025-03-28 17:13:57.451577 - Found @FIL1037.txt (text/plain) in CBT.V508.FILE1037.PDS, moved to PDS/@FIL1037
+2025-03-28 17:13:57.452542 - Found DOCX.docx (application/vnd.openxmlformats-officedocument.wordprocessingml.document) in CBT.V508.FILE1037.PDS, moved to PDS/DOCX
+2025-03-28 17:13:57.453486 - Found LOAD.xmi (application/xmit) in CBT.V508.FILE1037.PDS, moved to PDS/LOAD
+2025-03-28 17:13:57.461202 - Found SOURCE.xmi (application/xmit) in CBT.V508.FILE1037.PDS, moved to PDS/SOURCE
