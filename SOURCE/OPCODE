@@ -1,0 +1,141 @@
+         MACRO
+         OPCODE &OPCD,                                                 +
+               &MNEM,                                                  +
+               &FORMAT,                                                +
+               &COMMENT,                                               +
+               &FLAGS=,                                                +
+               &MASK=,       MASK TO DETECT RESERVED FIELDS    GP10018 +
+               &TYPE=DEFINE
+.*  NOTE THAT THE LENGTH PARAMETER IS EXTRANEOUS. ARCHITECTURE FORCES
+.*  THE LENGTH BASED ON OPCODE. SET IN R0 BY GETOPCOD SUBROUTINE.
+         GBLB &OPSW
+         GBLC &OPTBL(256),&HEXTBL(16)
+         LCLA &SUB1,&SUB2,&SUB3
+         LCLC &OP1,&OP2,&OPTS,&OLBL                             GP99137
+         LCLC &MACH,&SUBMACH                                    GP99137
+         AIF  (&OPSW).LBL020
+&OPSW    SETB 1
+&SUB1    SETA 1
+.LBL010  ANOP
+&OPTBL(&SUB1) SETC '0'
+&SUB1    SETA &SUB1+1
+         AIF  (&SUB1 LE 256).LBL010
+&HEXTBL(01) SETC '0'
+&HEXTBL(02) SETC '1'
+&HEXTBL(03) SETC '2'
+&HEXTBL(04) SETC '3'
+&HEXTBL(05) SETC '4'
+&HEXTBL(06) SETC '5'
+&HEXTBL(07) SETC '6'
+&HEXTBL(08) SETC '7'
+&HEXTBL(09) SETC '8'
+&HEXTBL(10) SETC '9'
+&HEXTBL(11) SETC 'A'
+&HEXTBL(12) SETC 'B'
+&HEXTBL(13) SETC 'C'
+&HEXTBL(14) SETC 'D'
+&HEXTBL(15) SETC 'E'
+&HEXTBL(16) SETC 'F'
+.LBL020  ANOP
+         AIF  ('&TYPE' EQ 'INDEX').LBL100
+         AIF  ('&TYPE' NE 'DEFINE' AND '&TYPE' NE 'TABLE').ERR070
+         AIF  (K'&OPCD NE 2 AND K'&OPCD NE 4).ERR020            GP99137
+&MACH    SETC '&OPCD'(1,2)                                      GP99137
+         AIF  (K'&OPCD NE 4).ONEBYTE                            GP99137
+&SUBMACH SETC '&OPCD'(3,2)                                      GP99137
+.ONEBYTE AIF  (T'&MACH EQ 'O').ERR010                           GP99137
+         AIF  (K'&MACH NE 2).ERR020
+.LBL025  ANOP
+&OP1     SETC '&MACH'(1,1)
+&OP2     SETC '&MACH'(2,1)
+&SUB1    SETA 1
+.LBL030  ANOP
+         AIF  ('&OP1' EQ '&HEXTBL(&SUB1)').LBL040
+         AIF  (&SUB1 EQ 16).ERR030
+&SUB1    SETA &SUB1+1
+         AGO  .LBL030
+.LBL040  ANOP
+&SUB2    SETA &SUB1
+&SUB1    SETA 1
+.LBL050  ANOP
+         AIF  ('&OP2' EQ '&HEXTBL(&SUB1)').LBL060
+         AIF  (&SUB1 EQ 16).ERR030
+&SUB1    SETA &SUB1+1
+         AGO  .LBL050
+.LBL060  ANOP
+&SUB3    SETA &SUB1
+&SUB1    SETA (16*(&SUB2-1))+&SUB3
+         AIF  (K'&OPCD EQ 4).PRETWO                             GP99137
+         AIF  ('&OPTBL(&SUB1)' NE '0').ERR040
+         AIF  ('&TYPE' EQ 'TABLE').TABLE                        GP99137
+         AGO  .PREONE                                           GP99137
+.PRETWO  ANOP ,                                                 GP99137
+&OLBL    SETC 'OP2'.'&MACH'.'&SUBMACH'                          GP99137
+         ORG  OPTB&MACH+4+4*X'&SUBMACH'                         GP99137
+         DC   AL4(&OLBL)                                        GP99137
+         ORG  ,                                                 GP99137
+         AGO  .PRECOM                                           GP99137
+.PREONE  ANOP  ,                                                GP99137
+&OLBL    SETC 'MACH&MACH'                                       GP99137
+&OPTBL(&SUB1) SETC '&OLBL'                                      GP99137
+.PRECOM  AIF  (T'&MNEM EQ 'O').ERR050                           GP99137
+         AIF  (T'&FORMAT EQ 'O').ERR060
+&OPTS    SETC '0'
+         AIF  (T'&FLAGS EQ 'O').LBL062                          GP10018
+&OPTS    SETC '&FLAGS'                                          GP10018
+.LBL062  AIF  (T'&COMMENT NE 'O').LBL064                        GP10018
+&OPTS    SETC '&OPTS'.'+'.'$OPNCMNT'   NO COMMENT               GP10018
+.LBL064  AIF  (T'&MASK EQ 'O').LBL066                           GP10018
+&OPTS    SETC '&OPTS'.'+'.'$OPMASK'    HAVE MASK                GP10018
+.LBL066  ANOP  ,                                                GP10018
+&OLBL    DC    CL6'&MNEM',AL1(&FORMAT,&OPTS)
+         AIF   (T'&MASK EQ 'O').NOMASK                          GP10018
+&OP1     SETC  '&MASK'.'000000000000'                           GP10018
+&OP1     SETC  '&OP1'(1,12)                                     GP10018
+         DC    XL6'&OP1'
+.NOMASK  AIF   (T'&COMMENT EQ 'O').MEND                         GP10018
+         AIF   ('&COMMENT'(1,1) NE '''').UNQUO                  GP10018
+         DC    CL12&COMMENT
+         MEXIT
+.UNQUO   DC    CL12'&COMMENT '      COMMENT                     GP10018
+         MEXIT
+.TABLE   ANOP  ,                                                GP99137
+&OPTBL(&SUB1) SETC 'X''80000000''+OPTB&MACH'                    GP99137
+OPTB&MACH DC  C'*',AL1(&SYSLIST(2),&SYSLIST(3),&SYSLIST(4))     GP05204
+         DC   (&SYSLIST(4)+1)AL4(0)  TWO-BYTE OPCODE POINTER    GP99137
+         MEXIT ,                                                GP99137
+.LBL100  ANOP
+&SUB1    SETA 1
+.LBL110  ANOP
+         DC    A(&OPTBL(&SUB1))
+         AIF   (&SUB1 EQ 256).EXIT
+&SUB1    SETA  &SUB1+1
+         AGO   .LBL110
+.ERR010  ANOP
+         MNOTE 12,'MACHINE CODE IS REQUIRED'
+         MEXIT
+.ERR020  ANOP
+         MNOTE 12,'MACHINE CODE MUST BE 2 CHARACTERS'
+         MEXIT
+.ERR030  ANOP
+         MNOTE 12,'MACHINE CODE CONTAINS INVALID HEX CHARACTER'
+         MEXIT
+.ERR040  ANOP
+         MNOTE 12,'MACHINE CODE &MACH IS DUPLICATELY DEFINED'
+         MEXIT
+.ERR050  ANOP
+         MNOTE 12,'MNEMONIC IS REQUIRED'
+         MEXIT
+.ERR060  ANOP
+         MNOTE 12,'INSTRUCTION FORMAT IS REQUIRED'
+         MEXIT
+.ERR070  ANOP
+         MNOTE 12,'INVALID TYPE PARAMETER'
+         MEXIT
+.ERR080  ANOP
+         MNOTE 12,'LENGTH IS REQUIRED'
+         MEXIT
+.ERR090  ANOP
+         MNOTE 12,'LENGTH MUST BE 2, 4, OR 6'
+.EXIT    ANOP
+.MEND    MEND

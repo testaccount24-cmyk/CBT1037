@@ -1,0 +1,12 @@
+//DISATEST JOB (Z904,0012),'GERHARD',CLASS=E,MSGCLASS=C,MSGLEVEL=(1,1)
+//JOBLIB   DD  DISP=SHR,DSN=SYS1.ESPLIB
+//*********************************************************************
+//*                                                                   *
+//*   THIS ASSEMBLES A SINGLE DISASSEMBLER MODULE FOR TESTING         *
+//*                                                                   *
+//*********************************************************************
+//       EXEC  PURGEME       DELETE OLD ASSEMBLIES
+//   EXEC ASMANY,SRC='GERHARD.MVS.DISASM',LIB='GERHARD.TEST.LOADLIB'
+%LKEDPARM='LET,LIST,MAP,XREF'
+DISASM08
+//

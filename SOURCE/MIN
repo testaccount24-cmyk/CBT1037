@@ -1,0 +1,30 @@
+         MACRO ,
+&NM      MIN   &R,&A,&TYPE=                                      85195
+.**********************************************************************
+.*   COMPARE A REGISTER WITH A SECOND OPERAND (REGISTER OR STORAGE)   *
+.*   AND PLACE OR LEAVE THE ARITHMETICALLY SMALLER VALUE IN THAT      *
+.*   REGISTER.                                                        *
+.*                                                                    *
+.*   SPECIFY TYPE=H FOR HALF-WORD STORAGE; OTHERWISE USES C/BNH/L     *
+.*   SPECIFY TYPE=E AND TYPE=D FOR SINGLE AND DOUBLE FLOATING         *
+.**********************************************************************
+         LCLA  &I
+         LCLC  &SUF                                             GP04234
+         AIF   ('&TYPE' EQ 'F' OR '&TYPE' EQ 'A').NOSUF         GP04234
+&SUF     SETC  '&TYPE'                                          GP04234
+.NOSUF   ANOP  ,                                                GP04234
+&I       SETA  &SYSNDX
+         AIF   (K'&A LT 3).STORAGE
+         AIF   ('&A'(1,1) NE '(' OR '&A'(K'&A,1) NE ')').STORAGE
+         AIF   ('&A'(2,1) EQ '(' OR '&A'(K'&A-1,1) EQ ')').STORAGE
+&NM      C&SUF.R &R,&A(1)
+         BNH   ZZZZ&I
+         L&SUF.R &R,&A(1)
+         AGO   .LABEL
+.STORAGE ANOP  ,
+&NM      C&SUF &R,&A
+         BNH   ZZZZ&I
+         L&SUF &R,&A
+.LABEL   ANOP  ,
+ZZZZ&I   DS    0H
+.MEND    MEND  ,

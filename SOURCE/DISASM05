@@ -1,0 +1,522 @@
+DA05     TITLE 'DISASM05 - RLD DATA PROCESSOR'
+*--------------------------------------------------------------------*
+*                                                                    *
+*  Module name: DISASM05                                             *
+*                                                                    *
+*  Function:                                                         *
+*   Process RLD records.  This module runs as a sub-function of      *
+*   DISASM03.  RLD data are interpreted and individual fields are    *
+*   represented in RLDDATA blocks chained from field COMMRLD of      *
+*   the common module, DISASM00.                                     *
+*                                                                    *
+*  This module was changed to permit RLD and DATA definitions to     *
+*  overlap. When a conflict is detected, the data specification is   *
+*  split or mangled to eliminate the conflict.                  GP99137
+*                                                                    *
+*--------------------------------------------------------------------*
+         COPY  DISASMGB
+DISASM05 MODHEAD ,           ENTRY HOUSEKEEPING
+         ITRACE ID=ENTRY
+         TM    PRINTFG1,$PFRLD       PRINTING RLD?              GP99149
+         BZ    RLD0010               NO; DON'T NEED SUBHEAD
+         TM    LOCFLAG,$LFSUBHD      FLAG ALREADY SET?          GP99138
+         BNZ   RLD0010               YES; DON'T NEED SUBHEAD    GP99139
+         MVC   COMMSUBH(SUBHEADL),SUBHEAD                       GP99139
+         LA    R1,SUBHEADL           SUBHEADING LENGTH          GP99139
+         STH   R1,COMMSUBL           SET LENGTH                 GP99139
+         MVI   COMMSUBL,X'FF'        SET NON-CENTERED INDICATOR GP99139
+         MVI   PRTCMD,$PRTSUBH       SET COMMAND                GP99139
+         BAL   R14,PRINTDAT          PRINT SUBHEADER            GP99139
+         OI    LOCFLAG,$LFSUBHD      SET FLAG                   GP99138
+         SPACE 1                                                GP99141
+RLD0010  DS    0H
+         LA    R4,COMMRLD            FIRST RLD POINTER
+         USING RLDDATA,R5            DEFINE BASE
+RLD0020  LR    R5,R4                 SAVE LAST ENTRY            GP99141
+         ICM   R4,15,RLDNEXT         LAST ENTRY YET?            GP99141
+         BNZ   RLD0020                                          GP99141
+RLD0030  DS    0H
+         L     R4,COMMIO             I/O AREA ADDRESS
+         LH    R6,6(,R4)             SIZE OF RLD DATA
+         LA    R7,16(,R4)            FIRST RLD ITEM
+         ITRACE ID=PROCRLD,                                            +
+               RDATA1=R6,            .. RLD DATA LENGTH                +
+               RDATA2=R7             .. FIRST RLD DATA ADDRESS
+RLD0040  DS    0H
+         MVC   SAVEPTR,0(R7)         SAVE RLD POINTER
+         MVC   SAVEPP,2(R7)          SAVE POSITION POINTER
+         LA    R7,4(,R7)             SKIP RLD AND POSITION POINTERS
+         SH    R6,COMMH4             MINUS LENGTH USED
+         BNP   EXIT0000              NO DATA.. EXIT
+RLD0050  DS    0H
+         ITRACE ID=NEWITEM,                                            +
+               RDATA1=R7,                                              +
+               DATA2=0(R7)
+         CLC   1(3,R7),COMMCSAD+1    ADDRESS TOO LOW?
+         BL    RLD0250               YES..
+         CLC   1(3,R7),COMMCSEA+1    ADDRESS TOO HIGH?
+         BH    RLD0250               YES..
+         LA    R0,RLDDATAL           MAKE EXPANSION SHORTER     GP99140
+         BAL   R14,GETMAIN           ACQUIRE STORAGE FOR NEW RLD DATA
+         ITRACE ID=NEWRLD,                                             +
+               RDATA1=R1             .. NEW RLD BLOCK'S ADDRESS
+         ST    R1,RLDNEXT            CHAIN FORWARD
+         LR    R5,R1                 SET NEW BLOCK ADDRESS
+         MVC   RLDEYE,RLD            SET EYECATCHER
+         MVC   RLDLEN,0(R7)          SET LENGTH (SORT OF)
+         NI    RLDLEN,X'0F'          TURN OFF 'TYPE' BITS
+         SR    R1,R1                 CLEAR REGISTER
+         IC    R1,RLDLEN             LENGTH, DIRECTION, AND INDICATOR
+         SRL   R1,2                  SHIFT OUT DIRECTION AND INDICATOR
+         LA    R1,1(,R1)             +1 = REAL LENGTH
+         STH   R1,RLDLEN             SAVE LENGTH
+         ICM   R1,7,1(R7)            CONSTANT'S ADDRESS
+         S     R1,COMMCSAD           DISPLACEMENT INTO THIS CSECT
+         ST    R1,RLDDISP            SAVE DATA DISPLACEMENT     GP99141
+         MVC   RLDPTR,SAVEPTR        SET RLD POINTER
+         MVC   RLDPP,SAVEPP          SET POSITION POINTER
+         MVZ   RLDTYPE,0(R7)         COPY RLD TYPE ONLY         GP10073
+         TM    RLDTYPE,X'FF'-X'90'   OTHER THAN UNRESOLVED A/V? GP10073
+         BNZ   RLD0068               YES; LEAVE IT              GP10073
+         NI    RLDTYPE,X'7F'         KILL ANY UNRESOLVED BIT    GP10073
+RLD0068  MVI   RLDDIR,C'+'           SET DIRECTION (PLUS)       GP99141
+         TM    0(R7),X'02'           DIRECTION BACKWARD (-) ?
+         BZ    RLD0070                                          GP99141
+         MVI   RLDDIR,C'-'           SET DIRECTION (MINUS)
+RLD0070  DS    0H
+         UNPK  MSG02PTR(5),RLDPTR(3) UNPACK RLD POINTER
+         TR    MSG02PTR,COMMHXTR     TRANSLATE TO PRINTABLE     GP99132
+         MVI   MSG02PTR+4,C' '       RESTORE BLANK
+         UNPK  MSG02PP(5),RLDPP(3)   UNPACK POSITION POINTER
+         TR    MSG02PP,COMMHXTR      TRANSLATE TO PRINTABLE     GP99132
+         MVI   MSG02PP+4,C' '        RESTORE BLANK
+         LM    R15,R1,RLDBXLE  GET RLD NAME TABLE               GP99141
+         IC    R14,RLDTYPE   LOAD SEARCH ARGUMENT               GP99141
+RLD0080  CLM   R14,1,0(R15)  MATCH?                             GP99141
+         BE    RLD0090               YES
+         BXLE  R15,R0,RLD0080   LOOP                            GP99141
+RLD0090  DS    0H
+         MVC   MSG02TYP,1(R15)       SET RLD TYPE               GP99141
+         MVC   MSG02LEN,RLDLEN+1     MOVE LENGTH
+         OI    MSG02LEN,X'F0'        CONVERT TO EBCDIC
+         MVC   MSG02DIR,RLDDIR       COPY DIRECTION
+         UNPK  MSG02DSP(9),RLDDISP(5)
+         TR    MSG02DSP,COMMHXTR     TRANSLATE TO PRINTABLE     GP99132
+         MVI   MSG02DSP+8,C' '       RESTORE BLANK
+         MVC   MSG02ENM,COMMBLKS     CLEAR NAME
+         SR    R1,R1                 CLEAR REGISTER
+         ICM   R1,3,RLDPTR           RLD POINTER
+         BZ    RLD0150               IGNORE IF ZERO
+         ICM   R1,3,RLDPTR           GET RLD'S ESD ID           GP10074
+         LA    R3,COMMESD            FIRST ESD ENTRY            GP99141
+         USING ESDDATA,R3            DEFINE BASE
+RLD0100  DS    0H
+         ICM   R3,15,ESDNEXT         NEXT ESD ENTRY
+         BZ    ERR0020               IF ZERO.. BAD NEWS
+         CLM   R1,3,ESDID            MATCHING ESD?              GP10074
+         BNE   RLD0100               NO; TRY NEXT               GP10074
+RLD0120  DS    0H
+         ST    R3,RLDESD             CHAIN RLD TO ESD
+         MVC   MSG02ENM,ESDNAME      COPY NAME
+         LM    R15,R1,ESDBXLE  GET ESD NAME TABLE               GP99141
+         IC    R14,ESDTYPE   LOAD SEARCH ARGUMENT               GP99141
+RLD0130  CLM   R14,1,0(R15)  MATCH?                             GP99141
+         BE    RLD0140               YES
+         BXLE  R15,R0,RLD0130   LOOP                            GP99141
+RLD0140  DS    0H
+         MVC   MSG02ETY,1(R15)       SET ESD TYPE               GP99141
+RLD0150  DS    0H
+         MVC   PRTDATA(MSG02L),MSG02 SET MESSAGE
+         BAL   R10,PRT0000           PRINT RLD MESSAGE
+*--------------------------------------------------------------------*
+*      FIND OUT IF THE RLD DATA IS WITHIN A DEFINED DATA AREA        *
+*  Cases:                  +--RLD--+                                 *
+*        1)    +--Data--+                    Loop to next DATA item  *
+*        2)         +--Data--+               Trunc DATA; build RLD   *
+*        3)                 +-Data-+         Overlay DATA by RLD     *
+*        4)                      +--Data--+  Build RLD; trunc. DATA  *
+*        5)                           +--Data--+   Build & link RLD  *
+*        6)            +------Data-----+     Split DATA into two     *
+*                                            fields; insert RLD      *
+*   R2 - Pointer to DATA   R8 - DATA   R1 - New RLD if required      *
+*--------------------------------------------------------------------*
+         L     R0,RLDDISP            DISPLACEMENT TO RLD DATA   GP99141
+         LH    R1,RLDLEN             RLD DATA LENGTH
+         AR    R1,R0                 PLUS BEGINNING DISPLACEMENT
+         BCTR  R1,0                  MINUS 1
+         ST    R1,TEMPEND            ENDING DISPLACEMENT        GP99137
+         LA    R2,COMMDATA           'LAST' FORWARD POINTER
+         ICM   R8,15,COMMDATA        FIRST 'DATA' BLOCK
+         USING DATADSCT,R8           DEFINE BASE
+         BZ    RLDNEW                NO DATA BLOCKS             GP10060
+         OI    LOCFLAG,$LFDATA  INDICATE DATA BLOCKS EXIST      GP99138
+RLD0160  CLC   RLDDISP,DATAEND  OVERLAP?                        GP10066
+         BH    RLD0169       NO; TRY ANOTHER    Case 1)         GP10066
+         CLC   TEMPEND,DATABEGN  IN DATA BLOCK?   Case 5)       GP99138
+         BL    RLDNEW        NO; ADD THE RLD INFO BEFORE DATA   GP10066
+         CLC   DATABEGN,RLDDISP  OVERLAP ?                      GP10066
+         BL    RLD0162       YES; SOME SORT OF SPLIT            GP10066
+         CLC   DATAEND,TEMPEND   DATA INSIDE RLD ?              GP10066
+         BNH   RLDREP        YES; REPLACE DATA   Case 3)        GP10066
+*--------------------------------------------------------------------*
+*   RLD BEGINS PRIOR TO DATA; BUILD RLD PRIOR, AND CLIP DATA         *
+*--------------------------------------------------------------------*
+RLDCLIP  L     R14,TEMPEND           Case 4)                    GP10066
+         LA    R14,1(,R14)   FIRST BYTE AFTER RLD               GP10066
+         ST    R14,DATABEGN  NEW DATA START                     GP10066
+         L     R15,DATAEND   CURRENT END                        GP10066
+         LA    R15,1(,R15)   RELATIVITY                         GP10066
+         SR    R15,R14       NEW LENGTH                         GP10066
+         ST    R15,DATALEN   COMPLETE CLIPPED DATA AREA         GP10066
+         LA    R0,DATAL      GET NEW DATA BLOCK                 GP10066
+         BAL   R14,GETMAIN           ACQUIRE STORAGE FOR NEW DATA BLOCK
+         ITRACE ID=DATACLIP,         TRACE NEW BLOCKS                  +
+               RDATA1=R1                                        GP10066
+         ST    R1,0(,R2)     LINK AHEAD OF DATA                 GP10066
+         ST    R8,0(,R1)     LINK OLD TO NEW                    GP10066
+         LR    R8,R1         SWAP                               GP10066
+         B     RLDFILL       COMPLETE NEW BLOCK                 GP10066
+         SPACE 1
+*--------------------------------------------------------------------*
+*   RLD BEGINS AFTER DATA; CLIP DATA AND BUILD RLD                   *
+*--------------------------------------------------------------------*
+RLD0162  CLC   DATAEND,TEMPEND    DATA LONGER THAN RLD?         GP10066
+         BH    RLDSPLIT      YES; SPLIT DATA PRIOR TO INSERT    GP10066
+RLDTRIM  L     R14,RLDDISP           Case 2)                    GP10066
+         BCTR  R14,0         LAST BYTE BEFORE RLD               GP10066
+         ST    R14,DATAEND   NEW DATA START                     GP10066
+         LA    R14,1(,R14)   RELATIVITY                         GP10066
+         S     R15,DATABEGN  NEW LENGTH                         GP10066
+         ST    R15,DATALEN   COMPLETE CLIPPED DATA AREA         GP10066
+         LA    R0,DATAL      GET NEW DATA BLOCK                 GP10066
+         BAL   R14,GETMAIN           ACQUIRE STORAGE FOR NEW DATA BLOCK
+         ITRACE ID=DATATRIM,         TRACE NEW BLOCKS                  +
+               RDATA1=R1                                        GP10066
+         MVC   0(4,R1),0(R8)   LINK IN                          GP10066
+         ST    R1,0(,R8)     LINK AFTER DATA                    GP10066
+         LR    R8,R1         SWAP                               GP10066
+         B     RLDFILL       COMPLETE NEW BLOCK                 GP10066
+*--------------------------------------------------------------------*
+*   RLD INSIDE DATA; SPLIT DATA AND LINK RLD IN BETWEEN              *
+*--------------------------------------------------------------------*
+RLDSPLIT LA    R0,DATAL      GET NEW DATA BLOCK                 GP10066
+         BAL   R14,GETMAIN           ACQUIRE STORAGE FOR NEW DATA BLOCK
+         ITRACE ID=DATASPLT,         TRACE NEW BLOCKS                  +
+               RDATA1=R1                                        GP10066
+         MVC   0(DATAL,R1),0(R8)   COPY OLD DATA TO NEW         GP10066
+         L     R14,RLDDISP           Case 6) LEFT DATA          GP10066
+         BCTR  R14,0         LAST BYTE BEFORE RLD               GP10066
+         ST    R14,DATAEND   NEW DATA START                     GP10066
+         LA    R14,1(,R14)   RELATIVITY                         GP10066
+         S     R15,DATABEGN  NEW LENGTH                         GP10066
+         ST    R15,DATALEN   COMPLETE CLIPPED DATA AREA         GP10066
+         ST    R1,0(,R8)     LINK NEW TO OLD                    GP10066
+         LR    R2,R8         MAKE OLD THE POINTER               GP10066
+         LR    R8,R1         AND NEW THE WORKING ENTRY          GP10066
+         B     RLDCLIP       REST LIKE Case 4)                  GP10066
+RLD0169  LA    R2,DATANEXT           LAST FORWARD POINTER       GP99137
+         ICM   R8,15,DATANEXT        NEXT DATA BLOCK'S ADDRESS
+         BNZ   RLD0160               LOOP
+*NEXT*   B     RLDNEW        INSERT NEW RLD                     GP10066
+         SPACE 1
+*--------------------------------------------------------------------*
+*    BUILD RLD AREA AND LINK PRIOR TO CURRENT DATA                   *
+*--------------------------------------------------------------------*
+RLDNEW   LA    R0,DATAL      NEW BLOCK LENGTH                   GP10057
+         BAL   R14,GETMAIN           ACQUIRE STORAGE FOR NEW DATA BLOCK
+         ITRACE ID=NEWDATA,          TRACE NEW BLOCKS                  +
+               RDATA1=R1                                        GP10066
+         ST    R1,0(,R2)             CHAIN TO PREVIOUS BLOCK    GP10066
+         ST    R8,DATANEXT-DATADSCT(,R1)                        GP10066
+         LR    R8,R1         NEW BLOCK TO FILL                  GP10066
+         B     RLDFILL       COMPLETE NEW DATA BLOCK            GP10057
+         SPACE 1
+*--------------------------------------------------------------------*
+*    EMPTY AND REUSE DATA AREA FOR RLD INFO                          *
+*--------------------------------------------------------------------*
+RLDREP   XC    DATANEXT+4-DATADSCT(DATAL-4,R8),DATANEXT+4-DATADSCT(R8)
+         SPACE 1
+*--------------------------------------------------------------------*
+*    RLD AREA HAS BEEN LINKED; COMPLETE THE DATA PORTION             *
+*--------------------------------------------------------------------*
+RLDFILL  MVC   DATAEYE,DATA          SET EYECATCHER
+         OI    LOCFLAG,$LFDMOD  INDICATE DATA BLOCKS MESSED UP  GP10057
+         MVC   DATABEGN,RLDDISP      DATA BEGINNING DISPLACEMENT
+         MVC   DATAEND,TEMPEND       DATA ENDING DISPLACEMENT
+         MVC   DATALEN+2(2),RLDLEN   SET RLD DATA LENGTH
+         MVC   DATANAME,COMMBLKS     INITIALIZE NAME
+         CLI   RLDTYPE,$RLDACON      ADCON?
+         BE    RLD0180               YES
+         CLI   RLDTYPE,$RLDVCON      VCON?
+         BE    RLD0200               YES
+         CLI   RLDTYPE,$RLDER1       UNRESOLVED EXTERNAL REFERENCE?
+         BE    RLD0200               YES
+         CLI   RLDTYPE,$RLDER2       UNRESOLVED EXTERNAL REFERENCE?
+         BE    RLD0200               YES
+         CLI   RLDTYPE,$RLDPSSZ      PSEUDO AREA SIZE?
+         BE    RLD0210               YES
+         CLI   RLDTYPE,$RLDPSDP      PSEUDO AREA DISPLACEMENT?
+         BE    RLD0220               YES
+         MVC   PRTDATA(EMSG01L),EMSG01
+         OI    COMMFLAG,$ERROR+$ABORT
+         BAL   R10,PRT0000           PRINT THE MESSAGE
+         BAL   R14,TRACEPRT  PRINT TRACE                        GP99146
+         LA    R1,ABEND003   SET ABEND CODE (NOT ADDRESS)       GP99146
+         ABEND (1),DUMP,,USER                                   GP99146
+         SPACE 1                                                GP99146
+RLD0180  CLC   ESDNAME,COMMCSNM      SAME AS REQUESTED CSECT NAME?
+         BNE   RLD0190               NO
+         MVI   DATATYPE,$DATAACN     ADCON
+         B     RLD0250               AND EXIT
+RLD0190  MVI   DATATYPE,$DATAARL     ADCON W/CSECT RELOCATION   GP05212
+         MVC   DATABASE+1(3),ESDADDR   SAVE RELOCATION VALUE    GP10069
+         MVC   DATANAME,ESDNAME      COPY NAME FOR ACON         GP10069
+         OI    ESDFLAG,$ESFXTRN      A() NEEDS EXTRN            GP10071
+         UNPK  MSG03DSP(9),RLDDISP(5)
+         TR    MSG03DSP,COMMHXTR     TRANSLATE TO PRINTABLE     GP99132
+         MVI   MSG03DSP+8,C' '       RESTORE BLANK
+         MVC   PRTDATA(MSG03L),MSG03 COPY MESSAGE
+         BAL   R10,PRT0000           PRINT MESSAGE
+         B     RLD0250               AND EXIT
+         SPACE 1
+RLD0200  MVI   DATATYPE,$DATAVCN     VCON
+         MVC   DATANAME,ESDNAME      COPY NAME FOR VCON
+*   N.B.: IEBGEN03 HAS A(),V(),AND EXTRN IN ONE CSECT. SO LEAVE GP10073
+*         THE EXTRN GENERATION FLAG ALONE                       GP10073
+*NO*     NI    ESDFLAG,255-$ESFXTRN  V() DOESN'T NEED EXTRN     GP10071
+         B     RLD0250               AND EXIT
+RLD0210  DS    0H
+         MVI   DATATYPE,$DATACXD     PSEUDO AREA SIZE
+         B     RLD0250               AND EXIT
+RLD0220  DS    0H
+         MVI   DATATYPE,$DATAQ       PSEUDO AREA DISPLACEMENT
+         MVC   DATANAME,ESDNAME      COPY NAME FOR Q AREA
+         B     RLD0250
+RLD0230  DS    0H
+         CLC   RLDLEN,DATALEN+2      SAME LENGTH?
+         BNE   RLD0240               NO
+         CLI   DATATYPE,$DATAACN     IS DATA AN ADCON?
+         BE    RLD0233               YES                        GP05212
+         CLI   DATATYPE,$DATAARL     IS DATA A RELATIVE ADCON   GP05212
+         BNE   RLD0240               NO
+RLD0233  CLI   RLDTYPE,$RLDACON      IS RLD ITEM AN ADCON?      GP05212
+         BE    RLD0236               NO                         GP05212
+         CLI   RLDTYPE,$RLDACRL      IS RLD ITEM AN ADCON?      GP05212
+         BNE   RLD0240               NO
+RLD0236  ITRACE ID=DUPADCON,                                           +
+               RDATA1=R7,                                              +
+               DATA2=0(R7)
+         MVC   PRTDATA(MSG04L),MSG04
+         BAL   R10,PRT0000           PRINT MESSAGE
+         B     RLD0250
+RLD0240  DS    0H
+         ITRACE ID=OVERLAP,                                            +
+               RDATA1=R7,                                              +
+               DATA2=0(R7)
+         NOPR  0
+         UNPK  EMSG04RB(9),RLDDISP(5)
+         TR    EMSG04RB,COMMHXTR     TRANSLATE TO PRINTABLE     GP99132
+         MVI   EMSG04RB+8,C' '       RESTORE BLANK
+         UNPK  EMSG04RE(9),TEMPEND(5)
+         TR    EMSG04RE,COMMHXTR     TRANSLATE TO PRINTABLE     GP99132
+         MVI   EMSG04RE+8,C' '       RESTORE BLANK
+         UNPK  EMSG04DB(9),DATABEGN(5)
+         TR    EMSG04DB,COMMHXTR     TRANSLATE TO PRINTABLE     GP99132
+         MVI   EMSG04DB+8,C' '       RESTORE BLANK
+         UNPK  EMSG04DE(9),DATAEND(5)
+         TR    EMSG04DE,COMMHXTR     TRANSLATE TO PRINTABLE     GP99132
+         MVI   EMSG04DE+8,C' '       RESTORE BLANK
+         MVC   PRTDATA(EMSG04L),EMSG04
+         OI    COMMFLAG,$ERROR+$ABORT
+         BAL   R10,PRT0000           PRINT MESSAGE
+RLD0250  DS    0H
+         TM    0(R7),X'01'           RLD/POS PTRS VALID FOR NEXT ITEM?
+         BO    RLD0260               YES
+         MVC   SAVEPTR,4(R7)         SAVE NEW RLD POINTER
+         MVC   SAVEPP,6(R7)          SAVE NEW POSITION POINTER
+         LA    R7,4(,R7)             UPDATE DATA ADDRESS
+         SH    R6,COMMH4             MINUS LENGTH USED
+         BNP   EXIT0000              ALL DONE
+RLD0260  DS    0H
+         LA    R7,4(,R7)             NEXT RLD ITEM
+         SH    R6,COMMH4             MINUS LENGTH USED
+         BP    RLD0050               PROCESS NEXT RLD ITEM
+ERR0010  DS    0H
+         MVC   PRTDATA(EMSG02L),EMSG02
+         OI    COMMFLAG,$ERROR+$ABORT
+         BAL   R10,PRT0000           PRINT ERROR MESSAGE
+         BAL   R14,TRACEPRT  PRINT TRACE                        GP99146
+         LA    R1,ABEND004   SET ABEND CODE (NOT ADDRESS)       GP99146
+         ABEND (1),DUMP,,USER                                   GP99146
+         SPACE 1                                                GP99146
+ERR0020  DS    0H
+         MVC   PRTDATA(EMSG03L),EMSG03
+         OI    COMMFLAG,$ERROR+$ABORT
+         BAL   R10,PRT0000           PRINT ERROR MESSAGE
+*NEXT*   B     EXIT0000              AND EXIT                   GP99141
+         SPACE 1                                                GP99141
+EXIT0000 TM    LOCFLAG,$LFDATA+$LFDMOD  USER'S DATA REDEFINED?  GP99138
+         BNO   EXIT0010                                         GP99138
+         TM    PRINTFG3,$MG0504   MESSAGE ISSUED BEFORE ?       GP04234
+         BNZ   EXIT0010      YES; ONCE IS ENOUGH                GP04234
+         OI    PRINTFG3,$MG0504   SET FLAG                      GP04234
+         MVI   PRTCC,C'0'    DOUBLE-SPACE THIS                  GP99138
+         LA    R1,MSGMUNGE                                      GP99138
+         BAL   R14,PRINTMSG  PRINT WARNING MESSAGE              GP99138
+*---------------------------------------------------------------------*
+*   TO KEEP DISASM08/09 FROM BOMBING, SORT THE DATA CHAIN AFTER MODS  *
+*---------------------------------------------------------------------*
+EXIT0010 TM    LOCFLAG,$LFDATA+$LFDMOD DATA CHANGED ?           GP10057
+         BNO   EXIT0020                                         GP10057
+         NI    LOCFLAG,255-$LFDMOD  RESET FLAG                  GP10057
+EXIT0012 LA    R1,COMMDATA   POINT TO FIRST ELEMENT             GP10057
+         ICM   R2,15,DATANEXT-DATADSCT(R1)  HAVE ANOTHER ?      GP10057
+         BZ    EXIT0010      NO                                 GP10057
+EXIT0014 LR    R1,R2         SAVE PRIOR                         GP10057
+         ICM   R2,15,DATANEXT-DATADSCT(R1)  HAVE ANOTHER ?      GP10057
+         BZ    EXIT0010      NO                                 GP10057
+         CLC   DATABEGN-DATADSCT(8,R1),DATABEGN-DATADSCT(R2)    GP10057
+         BNH   EXIT0014      IN SEQUENCE                        GP10057
+         XC    DATANEXT+4-DATADSCT(DATAL-4,R1),DATANEXT+4-DATADSCT(R2)
+         XC    DATANEXT+4-DATADSCT(DATAL-4,R2),DATANEXT+4-DATADSCT(R1)
+         XC    DATANEXT+4-DATADSCT(DATAL-4,R1),DATANEXT+4-DATADSCT(R2)
+         OI    LOCFLAG,$LFDMOD    SHOW ENTRY SWAPPED            GP10057
+         B     EXIT0012      TRY NEXT ONE                       GP10057
+EXIT0020 DS    0H                                               GP10057
+         ITRACE ID=EXIT
+         L     R13,4(,R13)           RESTORE REGISTER 13
+         LM    R14,R12,12(R13)       RESTORE ALL OTHER REGISTERS
+         SR    R15,R15               GIVE GOOD RETURN CODE
+         BR    R14                   RETURN TO CALLER
+         SPACE 1                                                GP99141
+PRT0000  DS    0H                                               GP99141
+         TM    COMMFLAG,$ERROR       ERROR MESSAGE?             GP99132
+         BNZ   PRT0005               YES; PRINT IT              GP99132
+         TM    PRINTFG1,$PFRLD       PRINT RELOCATION DATA ?    GP99132
+         BNZ   PRT0005               YES                        GP99132
+         MVI   PRTDATA,C' '          JUST CLEAR                 GP99132
+         MVC   PRTDATA+1(L'PRTDATA-1),PRTDATA   PRINT BUFFER    GP99132
+         BR    R10                   JUST RETURN                GP99132
+PRT0005  BAL   R14,PRINTREC                                     GP99138
+         BR    R10                   EXIT                       GP99141
+*---------------------------------------------------------------------*
+*                                                                     *
+*              WORK AREAS                                             *
+*                                                                     *
+*---------------------------------------------------------------------*
+RLDBXLE  DC    A(RLDTBLE,RLDTBLEL,RLDTBLND)                     GP99141
+ESDBXLE  DC    A(ESDTBLE,ESDTBLEL,ESDTBLND)                     GP99141
+TEMPEND  DC    A(0)                                             GP99137
+LOCFLAG  DC    X'00'                                            GP99138
+$LFSUBHD EQU   X'80'                 SUBHEADING PRINTED         GP99138
+$LFDATA  EQU   X'08'         USER SPECIFIED DATA BLOCKS EXIST   GP99138
+$LFDMOD  EQU   X'04'         USER SPECIFIED DATA MUNGED         GP99138
+SAVEPTR  DC    XL2'0000'
+SAVEPP   DC    XL2'0000'
+RLD      DC    CL8'RLD'
+DATA     DC    CL8'DATA'
+SUBHEAD  DS    0C
+         DC    CL08'RLD : '                                     GP99139
+         DC    CL06'RELPTR'
+         DC    CL02' '
+         DC    CL16'POSITION POINTER'
+         DC    CL02' '
+         DC    CL08'TYPE   '                                    GP10058
+         DC    CL02' '
+         DC    CL08'LENGTH'                                     GP10058
+         DC    CL02' '
+         DC    CL09'DIRECTION'
+         DC    CL03' '
+         DC    CL08'DISP '                                      GP10058
+         DC    CL03' '                                          GP10058
+         DC    CL10'ESD SYMBOL'
+         DC    CL03' '                                          GP10058
+         DC    CL08'TYPE'                                       GP10058
+SUBHEADL EQU   *-SUBHEAD
+MSG02    DS    0C
+         DC    CL09' '
+MSG02PTR DC    CL04' '                 RLD POINTER
+         DC    CL09' '
+MSG02PP  DC    CL04' '                 POSITION POINTER
+         DC    CL08' '
+MSG02TYP DC    CL10' '                 RLD TYPE
+         DC    CL05' '
+MSG02LEN DC    CL01' '                 LENGTH
+         DC    CL08' '
+MSG02DIR DC    CL01' '                 DIRECTION (+ OR -)
+         DC    CL07' '
+MSG02DSP DC    CL08' '                 DISPLACEMENT
+         DC    CL04' '
+MSG02ENM DC    CL08' '                 CORRESPONDING ESD ENTRY NAME
+         DC    CL04' '
+MSG02ETY DC    CL04' '                 CORRESPONDING ESD ENTRY TYPE
+MSG02L   EQU   *-MSG02
+         SPACE 1                                                GP10071
+EMSG01   DC    C'DISASM0501E UNKNOWN RLD DATA TYPE'
+EMSG01L  EQU   *-EMSG01
+         SPACE 1                                                GP10071
+EMSG02   DC    C'DISASM0502E RLD DATA REMAINING WENT NEGATIVE'
+EMSG02L  EQU   *-EMSG02
+         SPACE 1                                                GP10071
+EMSG03   DC    C'DISASM0503E RLD POINTER LARGER THAN NUMBER OF ESD ITEM+
+               S'
+EMSG03L  EQU   *-EMSG03
+         SPACE 1                                                GP10071
+EMSG04   DC    C'DISASM0504E RLD DATA AT '
+EMSG04RB DC    CL08' '
+         DC    C' TO '
+EMSG04RE DC    CL08' '
+         DC    C' OVERLAPS A USER DEFINED DATA AREA AT '
+EMSG04DB DC    CL08' '
+         DC    C' TO '
+EMSG04DE DC    CL08' '
+         DC    C' '
+EMSG04L  EQU   *-EMSG04
+         SPACE 1                                                GP10071
+MSG04    DC    C'DISASM0505W THIS RLD ITEM REFERENCES AN ADCON PREVIOUS+
+               LY ENCOUNTERED'
+MSG04L   EQU   *-MSG04
+         SPACE 1                                                GP10071
+MSG03    DC    C'DISASM0506I RLD ITEM AT '
+MSG03DSP DC    CL8' '
+         DC    C' IS AN ADCON RESOLVING TO A DIFFERENT CSECT'   GP10071
+MSG03L   EQU   *-MSG03
+         SPACE 1                                                GP99138
+MSGMUNGE DC    AL1(L'MSGMUNGT)                                  GP99138
+MSGMUNGT DC    C'DISASM0507W AT LEAST ONE DATA DEFINITION WAS MODIFIED *
+               TO RESOLVE AN RLD CONFLICT'                      GP10074
+         SPACE 1                                                GP99138
+RLDTBLE  DS    0C
+         DC    AL1($RLDACON),CL10'ADCON'
+RLDTBLEL EQU   *-RLDTBLE
+         DC    AL1($RLDVCON),CL10'VCON'
+         DC    AL1($RLDPSSZ),CL10'CXD'
+         DC    AL1($RLDPSDP),CL10'Q'
+         DC    AL1($RLDER1),CL10'UNRESOLVED'
+RLDTBLND DC    AL1($RLDER2),CL10'UNRESOLVED'                    GP99141
+         DC    X'FF',CL10'UNKNOWN'
+ESDTBLE  DS    0C
+         DC    AL1($ESDSD),CL4' SD'         00
+ESDTBLEL EQU   *-ESDTBLE
+         DC    AL1($ESDSD+128),CL4' SD'     80  X390 FUNNY ?    GP11013
+         DC    AL1($ESDER),CL4' ER'         01
+         DC    AL1($ESDLR),CL4' LR'         02
+         DC    AL1($ESDPC),CL4' PC'         03
+         DC    AL1($ESDPC1),CL4' PC'        04                  GP05095
+         DC    AL1($ESDCM),CL4' CM'         05
+         DC    AL1($ESDPR),CL4' PS'         06
+         DC    AL1($ESDNULL),CL4'NULL'      07
+         DC    AL1($ESDWX),CL4' WX '        0A
+ESDTBLND DC    AL1($ESDOV),CL4' OV '        14                  GP99141
+         DC    X'FF',CL4'UNKN'
+         SPACE 1
+         LTORG
+         SPACE 1
+         COPY  DISASMDA
+*---------------------------------------------------------------------*
+*                                                                     *
+*              COMMON DATA MAP                                        *
+*                                                                     *
+*---------------------------------------------------------------------*
+DISASM00 DISASMCM TYPE=DSECT
+         END  DISASM05

@@ -1,0 +1,489 @@
+DA13     TITLE 'DISASM13 - OBJECT MODULE READER'
+         COPY   DISASMGB
+*--------------------------------------------------------------------*
+*                                                                    *
+*  Module name: DISASM13                                             *
+*                                                                    *
+*  Function:                                                         *
+*   Object deck reader.  This module replaces the load module        *
+*   processing done by DISASM03 with object deck processing.         *
+*   DISMOD DD input may be a sequential data set, or PDS member      *
+*   object text. The program processes ESD, TXT, and RLD cards,      *
+*   and optionally handles SYM text. Calls DISASM04/05/55.           *
+*                                                                    *
+*   If the module is successfully read and the requested CSECT       *
+*   located, COMMTXT will be set to the CSECT's storage address,     *
+*   COMMCSAD will be the CSECT's address within the load module,     *
+*   COMMCSEP will be the load module's entry point, COMMCSEA will    *
+*   be the CSECT's ending address within the load module, and        *
+*   COMMCSLN will the the CSECT's length.                            *
+*                                                                    *
+*--------------------------------------------------------------------*
+*                                                                    *
+*   DISASM13 is called from DISASM03, with the JFCB address for      *
+*     DISMOD in R0, and the FMT 1 DSCB (sans DSN) in R1.             *
+*                                                                    *
+*--------------------------------------------------------------------*
+         PRINT NOGEN                                            GP10056
+DISASM13 MODHEAD BASE=(R12,R8)     HOUSEKEEPING
+         LR    R2,R0         COPY THE JFCB
+         USING INFMJFCB,R2
+         USING IECSDSL1,R1
+         STCM  R2,7,EXITLIST+1    COMPLETE EXIT LIST
+         OI    JFCBTSDM,JFCNWRIT+JFCVSL  NO REWRITE; MODIFIED
+         OI    MODFLAG,$SEQ       SET FOR SEQUENTIAL INPUT
+         CLI   COMMDWRD+2,X'20'   DASD ?
+         BNE   READSEQ       NO; MUST BE SEQUENTIAL OBJECT DECK
+         TM    DS1DSORG,DS1DSGPO  PARTITIONED ?
+         BZ    READSEQ       NO; MUST BE SEQUENTIAL
+         MVC   DISMOD(DISMODL),DISMODPO     OVERLAY
+         TM    JFCBIND1,JFCPDS  MEMBER NAME SPECIFIED ?
+         BNZ   READSEQ       YES
+         NI    MODFLAG,255-$SEQ   RESET SEQUENTIAL INPUT
+         DROP  R1,R2
+READSEQ  OPEN  (DISMOD,INPUT),TYPE=J OPEN DISMOD
+         TM    DCBOFLGS+DISMOD-IHADCB,DCBOFOPN   OPEN ?
+         BZ    BADFILE            OOPS
+         TM    MODFLAG,$SEQ      TEST FOR SEQUENTIAL INPUT
+         BNZ   SKIPMEM            SKIP MEMBER STUFF
+         MVC   DIRMEM,COMMMOD        SET MEMBER NAME = MODULE NAME
+MOD0010  DS    0H
+         BLDL  DISMOD,BLDLIST        ISSUE BLDL
+         LTR   R15,R15               BLDL SUCCESSFUL?
+         BNZ   ERR0010               NO
+         MVC   MSG01MEM,DIRMEM       SET MEMBER NAME
+         TM    DIRINDS,$ALIAS        IS THIS AN ALIAS?
+         BO    MOD0020               YES
+         MVC   MSG01ALS,NO           NOT AN ALIAS
+         B     MOD0030
+MOD0020  DS    0H
+         MVC   MSG01ALS,YES          MEMBER IS AN ALIAS
+MOD0030  DS    0H
+         UNPK  MSG01TXT(7),DIRTTTR(4)
+         TR    MSG01TXT,COMMHXTR     TRANSLATE TO PRINTABLE
+         MVI   MSG01TXT+6,C' '       RESTORE BLANK
+         MVC   PRTDATA(MSG01L),MSG01 SET MESSAGE
+         BAL   R10,PRT0000           PRINT MESSAGE
+MOD0230  DS    0H
+         FIND  DISMOD,DIRMTTRZ,C     POINT TO 1ST BLOCK
+         LTR   R15,R15               POINT SUCCESSFUL?
+         BZ    SKIPMEM               YES
+         STC   R15,POINTR15          SAVE RETURN CODE
+         STC   R0,POINTR0            SAVE REASON CODE
+         LA    R1,PNTMSGS            MESSAGE TABLE ADDRESS
+MOD0240  DS    0H
+         CLI   0(R1),X'FF'           END OF TABLE?
+         BE    ERR0070               YES
+         CLC   PNTCODE,0(R1)         MESSAGE FOUND?
+         BE    MOD0250               YES
+         LA    R1,PNTMSGL(,R1)       NEXT MESSAGE
+         B     MOD0240               LOOP
+MOD0250  DS    0H
+         MVC   PRTDATA(PNTMSGL-2),2(R1)
+         OI    COMMFLAG,$ERROR+$ABORT
+         BAL   R10,PRT0000           PRINT MESSAGE
+         B     EXIT0000              AND EXIT
+         SPACE 1
+*---------------------------------------------------------------------*
+*   COMMON READ/PROCESS CODE FOR SEQUENTIAL AND PARTITIONED INPUT     *
+*---------------------------------------------------------------------*
+SKIPMEM  DS    0H
+READLOOP TM    MODFLAG,$MODEOF       EOF FLAG ON?
+         BO    CALLSYMT              YES; CALL SYMT PROCESSOR
+         BAL   R10,READ0000          READ A RECORD
+         ITRACE ID=OBJTYPE,                                            +
+               DATA1=SRCCARD,        .. CAPTURE 8 BYTES OF DATA        *
+               DATA2=SRCCARD+8       .. CAPTURE 8 BYTES OF DATA
+         CLI   SRCCARD,X'02' IS IT AN OBJECT CARD ?
+         BNE   CARDCOPY      NO; JUST COPY
+         CLC   =C'TXT',SRCTYPE    TEXT CARD?
+         BE    PROTEXT            YES; PROCESS
+         CLC   =C'RLD',SRCTYPE    RLD  CARD?
+         BE    PRORLD             YES; PROCESS
+         CLC   =C'ESD',SRCTYPE    ESD  CARD?
+         BE    PROCESD            YES; PROCESS
+         CLC   =C'SYM',SRCTYPE    SYM  CARD?
+         BE    PROCSYM            YES; PROCESS
+         CLC   =C'END',SRCTYPE    END  CARD?
+         BE    PROSEND            YES; PROCESS
+CARDCOPY BAL   R10,PUN0000   PUNCH IT
+         BAL   R10,PRTUSER   PRINT IT AND CLEAR LINE
+         B     READLOOP      GET ANOTHER
+         SPACE 1
+*---------------------------------------------------------------------*
+*    PROCESS AN ESD CARD                                              *
+*      IN ORDER TO CALL DISASM04, WE NEED CHANGE ESDTYPE 1 TO 3       *
+*---------------------------------------------------------------------*
+PROCESD  ICM   R1,3,SRCTEID  GET ESD ID
+         SR    R2,R2                                            GP10066
+         ICM   R2,3,SRCTLEN  GET TEXT LENGTH
+         L     R10,COMMIO    LOAD I/O BUFFER ADDRESS
+         LA    R15,SRCTEXT-8
+         ST    R15,COMMIO    TEMP REPLACE
+         STCM  R1,3,SRCTEXT-4
+         STCM  R2,3,SRCTEXT-2  FAKE LOAD CESD RECORD
+         SRA   R2,4          CONVERT LENGTH TO COUNT            GP10066
+         BNP   PROCESDX      IGNORE BAD CARD                    GP10066
+         LA    R3,SRCTEXT    POINT TO FIRST FIELD               GP10066
+PROCESDL CLI   8(R3),X'01'   ENTRY ?                            GP10066
+         BNE   *+8           NO; LEAVE IT                       GP10066
+         MVI   8(R3),X'03'   USE LOAD MODULE ENTRY CODE         GP10066
+         MVI   12(R3),X'01'  FAKE SEGMENT NUMBER                GP10066
+         LA    R3,16(,R3)    NEXT ENTRY                         GP10066
+         BCT   R2,PROCESDL   CLEAN IT                           GP10066
+         L     R15,A04       GET CESD PROCESSOR
+         BALR  R14,R15       CALL IT
+PROCESDX ST    R10,COMMIO    FIX BUFFER ADDRESS
+         B     READLOOP      GET NEXT CARD
+         SPACE 1
+*---------------------------------------------------------------------*
+*    PROCESS AN RLD CARD                                              *
+*---------------------------------------------------------------------*
+PRORLD   ICM   R2,3,SRCTLEN  GET TEXT LENGTH
+         L     R3,COMMIO     LOAD I/O BUFFER ADDRESS
+         LA    R15,SRCTEXT-16
+         ST    R15,COMMIO    TEMP REPLACE
+         STCM  R2,3,SRCTEXT-10  SET LENGTH                      GP10072
+         L     R15,A05       GET RLD  PROCESSOR
+         BALR  R14,R15       CALL IT
+         ST    R3,COMMIO     FIX BUFFER ADDRESS
+         B     READLOOP      GET NEXT CARD
+         SPACE 1
+PROSEND  OI    MODFLAG,$MODEOF       SET EOF FLAG
+         ITRACE ID=END,DATA1=SRCTEID,DATA2=SRCTADD
+         TM    COMMFLAG,$CSECT       CSECT LOCATED?
+         BNO   ERR0060               NO
+         CLC   COMMESID,SRCTEID      MATCHING ESD ID ?
+         BNE   CALLSYMT        NO
+         CLC   SRCTADD,SRCTADD-1     ENTRY = BLANKS ?
+         BE    CALLSYMT        YES; LEAVE 0
+         MVC   COMMCSEP+L'COMMCSEP-L'SRCTADD(L'SRCTADD),SRCTADD GP10066
+         SPACE 2
+CALLSYMT ICM   R0,15,COMMSYMP  DID WE FIND ANY SYMBOL TABLE ENTRIES?
+         BZ    EXIT0000        NO; JUST EXIT
+         L     R15,A55         GET ADDRESS OF SYMT PROCESSOR
+         BALR  R14,R15         CALL IT
+         SPACE 2
+EXIT0000 DS    0H
+         ITRACE ID=EXIT
+         CLOSE DISMOD                CLOSE DISMOD
+         L     R13,4(,R13)           RESTORE REGISTER 13
+         LM    R14,R12,12(R13)       RESTORE ALL OTHER REGISTERS
+         SR    R15,R15               GIVE GOOD RETURN CODE
+         BR    R14                   RETURN TO CALLER
+         SPACE 1
+*---------------------------------------------------------------------*
+*    PROCESS A TEXT RECORD                                            *
+*---------------------------------------------------------------------*
+PROTEXT  SR    R4,R4
+         SR    R5,R5
+         ICM   R4,3,SRCTEID          CESD ENTRY NUMBER ADDRESS
+         ICM   R5,3,SRCTLEN          CSECT INFO LENGTH
+         ITRACE ID=CSECTNBR,                                           +
+               RDATA1=R4,            .. CSECT ENTRY NUMBER             +
+               RDATA2=R5             .. ENTRIES LENGTH
+         CLM   R4,3,COMMESID         CORRECT ESD ID?
+         BNE   READLOOP              NO; IGNORE
+         SR    R2,R2                 CLEAR REGISTER
+         ICM   R2,7,SRCTADD          ASSIGNED ADDRESS
+         ITRACE ID=READTEXT
+         LTR   R5,R5                 TEXT LENGTH ZERO?
+         BNP   READLOOP              YES
+         A     R2,COMMTXT            PLUS TEXT'S BASE ADDRESS
+         ITRACE ID=MOVETEXT
+         BCTR  R5,0                  EXEC LENGTH
+         EX    R5,EXMVCTXT           COPY TEXT (WHEW!)
+         B     READLOOP              DONE
+EXMVCTXT MVC   0(0,R2),SRCTEXT
+         SPACE 2
+PROCSYM  SR    R5,R5
+         LA    R3,SRCTEXT    POINT TO TEXT
+         ICM   R6,15,SYMPOINT  GET TAIL OF QUEUE
+         BNZ   SYMT0050      USE IT
+         LA    R6,COMMSYMP   ELSE GET POINTER TO ROOT
+SYMT0050 SR    R2,R2
+         ICM   R2,3,SRCTLEN  GET CARD'S TEXT LENGTH
+         BNP   SYMT0990      TOO BAD
+         ITRACE ID=SYMTX,DATA1=(R2),DATA2=SRCTEXT
+         CH    R2,=H'56'     LARGER THAN DESIGN LIMIT?
+         BH    SYMT0990      YES; HUH?
+         LA    R0,SYMDATAL   GET BLOCK SIZE
+         BAL   R14,GETMAIN   GET STORAGE
+         ST    R1,0(,R6)     CHAIN IT TO OLD BLOCK
+         USING SYMDATA,R1    DECLARE IT
+         STH   R2,SYMRLEN    STASH LENGTH
+         BCTR  R2,0
+         EX    R2,EXMVCSYM   MOVE SYMBOL TABLE TEXT
+         LR    R6,R1         SWAP OVER
+         ST    R6,SYMPOINT   SAVE POINTER TO TAIL OF QUEUE
+         B     READLOOP      GET ANOTHER BLOCK
+EXMVCSYM MVC   SYMTEXT(0),SRCTEXT MOVE SYM TEXT
+         DROP  R1
+         SPACE 1
+SYMT0990 TM    MODFLAG,$SYMERR   PRIOR MESSAGE?
+         BNZ   READLOOP          YES; JUST LOOP AGAIN
+         OI    MODFLAG,$SYMERR   SET MESSAGE ISSUED
+         LA    R1,EMSG20     POINT TO MESSAGE
+         BAL   R14,PRINTMSG  PRINT IT
+         B     READLOOP      CONTINUE
+         SPACE 2
+READ0000 LM    R5,R7,BUFFING      GET BUFFER POINTERS
+         BXLE  R5,R6,READ0100     ANOTHER CARD IN BUFFER ?
+         L     R5,COMMIO             I/O BUFFER'S ADDRESS
+         XC    MODDECB,MODDECB       CLEAR ECB
+         READ  MODDECB,              READ LOAD MODULE                  +
+               SF,                   .. SEQUENTIALLY FORWARD           +
+               DISMOD,               .. FROM LODLIB DATA SET           +
+               (R5),                 .. I/O AREA'S ADDRESS             +
+               $IOSIZE               .. LENGTH FROM DCB
+         CHECK MODDECB               WAIT FOR READ
+         ST    R5,BUFFING         Indicate data available
+         L     R7,DECIOBPT-DECB+MODDECB   Get IOB
+         USING IOBSTDRD,R7        Give assembler IOB base
+         SLR   R2,R2              Clear residual amount work register
+         ICM   R2,B'0011',IOBCSW+5  Load residual count
+         DROP  R7                 Don't need IOB address base anymore
+         L     R7,=A($IOSIZE)     Load maximum block size
+         SR    R7,R2              less length unread
+         AR    R7,R5              End address
+         BCTR  R7,0               Last byte
+         ST    R7,BUFFING+8       Update
+         ITRACE ID=READ13,DATA1=BUFFING,DATA2=BUFFING+8
+READ0100 MVC   SRCCARD,0(R5)      MOVE ONE CARD IMAGE
+         STM   R5,R7,BUFFING         UPDATE
+         BR    R10                   RETURN
+EOD00000 DS    0H
+         ITRACE ID=EOD
+         OI    COMMFLAG,$ERROR+$ABORT SET FLAGS
+         MVC   PRTDATA(EMSG3L),EMSG3 SET MESSAGE
+         BAL   R10,PRT0000           PRINT MESSAGE
+         B     EXIT0000              EXIT
+         SPACE 1
+ERR0010  DS    0H
+         MVI   BLDLR0,0              INITIALIZE REASON CODE
+         STC   R15,BLDLR15           SAVE R15
+         CLI   BLDLR15,8             R15 = 8?
+         BNE   ERR0020               NO
+         STC   R0,BLDLR0             SAVE R0
+ERR0020  DS    0H
+         LA    R1,BLDLMSGS           FIRST BLDL MESSAGE
+ERR0030  DS    0H
+         CLI   0(R1),X'FF'           END OF TABLE?
+         BE    ERR0050               YES
+         CLC   BLDLCODE,0(R1)        PROPER MESSAGE FOUND?
+         BE    ERR0040               YES
+         LA    R1,BLDLMSGL(,R1)      NEXT MESSAGE
+         B     ERR0040               LOOP
+ERR0040  DS    0H
+         MVC   PRTDATA(BLDLMSGL-2),2(R1)
+         BAL   R10,PRT0000           PRINT MESSAGE
+         OI    COMMFLAG,$ABORT       SET ABORT FLAG
+         B     EXIT0000              AND EXIT
+ERR0050  DS    0H
+         ITRACE ID=INVBLDLC,         INVALID BLDLCODE                  +
+               DATA1=BLDLCODE        ..
+         BAL   R14,TRACEPRT  PRINT TRACE
+         LA    R1,ABEND002   SET ABEND CODE (NOT ADDRESS)
+         ABEND (1),DUMP,,USER
+         SPACE 1
+BADFILE  MVC   PRTDATA(EMSG00L),EMSG00
+         OI    COMMFLAG,$ERROR+$ABORT
+         BAL   R10,PRT0000           PRINT MESSAGE
+         B     EXIT0000              AND EXIT
+ERR0060  DS    0H
+         MVC   PRTDATA(EMSG01L),EMSG01
+         OI    COMMFLAG,$ERROR+$ABORT
+         BAL   R10,PRT0000           PRINT MESSAGE
+         B     EXIT0000              AND EXIT
+ERR0070  DS    0H
+         MVC   PRTDATA(EMSG02L),EMSG02
+         OI    COMMFLAG,$ERROR+$ABORT
+         BAL   R10,PRT0000           PRINT MESSAGE
+         B     EXIT0000              AND EXIT
+         SPACE 1
+***********************************************************************
+**                                                                   **
+**   PUNCH OUTPUT                                                    **
+**                                                                   **
+***********************************************************************
+PUN0000  TM    COMMDD,$PUNCHDD       IS DISPUNCH DD PRESENT?
+         BNOR  R10                   NO
+         LA    R1,SRCCARD            POINT TO CARD IMAGE
+         BAL   R14,PUNCHCRD          PUNCH SOURCE STATEMENT
+         BR    R10                   RETURN
+         SPACE 1
+***********************************************************************
+**                                                                   **
+**   PRINT OUTPUT                                                    **
+**                                                                   **
+**   PRTUSER COPIES FROM INPUT BUFFER                                **
+**   PRT0000 PRINT THE CURRENT PRINT LINE AS IS                      **
+**                                                                   **
+***********************************************************************
+PRTUSER  MVC   PRTDATA(SRCL),SRC     SET PRINT DATA
+         MVC   SRC,SRC-1     PRINT BUFFER
+         SPACE 1
+PRT0000  TM    MODFLAG,$SUBH         HAS SUB-HEADING BEEN PRINTED?
+         BO    PRT0010               YES
+         MVC   COMMSUBH(SUBHD1L),SUBHD1
+         LA    R1,SUBHD1L            SUBHEADING LENGTH
+         STH   R1,COMMSUBL           SET LENGTH
+         OI    MODFLAG,$SUBH         SET FLAG
+         MVI   PRTCMD,$PRTSUBH       SET COMMAND
+         BAL   R14,PRINTDAT          LINK TO PRINT MODULE
+PRT0010  BAL   R14,PRINTREC
+         BR    R10                   RETURN
+         SPACE 2
+         LTORG
+*---------------------------------------------------------------------*
+*                                                                     *
+*              WORK AREAS                                             *
+*                                                                     *
+*---------------------------------------------------------------------*
+SYMPOINT DC    A(0)          LAST ENTRY IN SYM CHAIN
+BUFFING  DC    A(80,80,0)     DEBLOCK ADDRESSES
+* ------------------------------------------------------------------- *
+         DC    C' '     1/n  FAST BLANKING
+SRC      DS    0CL132
+SRCDISP  DC    CL08' '               DISPLACEMENT
+         DC    CL02' '
+SRCOBJ1  DC    CL04' '               OBJECT CODE BYTES 1 AND 2
+         DC    CL01' '
+SRCOBJ2  DC    CL04' '               OBJECT CODE BYTES 3 AND 4
+         DC    CL01' '
+SRCOBJ3  DC    CL04' '               OBJECT CODE BYTES 5 AND 6
+         DC    CL01' '
+SRCOBJ4  DC    CL04' '      (DATA)   OBJECT CODE BYTES 7 AND 8
+         DC    CL02' '
+SRCSTMT  DC    CL05' '               STATEMENT NUMBER
+         DC    CL02' '
+SRCCARD  DC    0CL80' ' 01 - 80      CARD IMAGE
+SRCID    DC    CL01' '  01 - 01      X'02' FOR OBJECT TEXT
+SRCTYPE  DC    CL03' '  02 - 04      ESD/TXT/RLD/END
+         DC    CL01' '  05 - 05
+SRCTADD  DC    CL03' '  06 - 08      TEXT ADDRESS
+         DC    CL02' '  09 - 10
+SRCTLEN  DC    CL02' '  11 - 12      TEXT LENGTH
+         DC    CL02' '  13 - 14
+SRCTEID  DC    CL02' '  15 - 16      TEXT ESDID
+SRCTEXT  DC    CL56' '  17 - 72      MNEMONIC
+SRCSEQ   DC    CL08' '  73 - 80      STATEMENT SEQUENCE NUMBER
+SRCL     EQU   *-SRC
+         SPACE 1
+BLDLIST  DC    H'1'                  ONE MEMBER                       |
+         DC    H'74'                 LENGTH PER MEMBER                |
+DIRDATA  DS    CL74                                                   |
+         ORG   DIRDATA                                                |
+DIRMEM   DC    CL8' '                MEMBER NAME                      |
+DIRMTTRZ DC    XL4'00000000'         MEMBER'S RELATIVE ADDRESS        |
+         DC    XL1'00'                                                |
+DIRINDS  DC    X'00'                 INDICATORS                       |
+$ALIAS   EQU   X'80'                 .. MEMBER IS AN ALIAS            |
+DIRTTTR  DC    XL3'000000'           TEXT'S RELATIVE ADDRESS          |
+         ORG   DIRDATA+80                                             |
+* ------------------------------------------------------------------- *
+         SPACE 1
+MODFLAG  DC    X'00'                 PROGRAM FLAGS/SWITCHES
+$SUBH    EQU   X'80'                 .. SUBHEADING PRINTED
+$MODEOF  EQU   X'40'                 .. END OF CONTROL DATA
+$SYMERR  EQU   X'20'                 .. ERROR IN SYMBOL TABLE ENTRY
+$SEQ     EQU   X'01'         SEQUENTIAL INPUT
+BLDLCODE DS    0XL2                  BLDL RETURN CODE/REASON CODE
+BLDLR15  DC    X'00'                 .. R15
+BLDLR0   DC    X'00'                 .. R0
+PNTCODE  DS    0XL2                  POINT RETURN CODE/REASON CODE
+POINTR15 DC    X'00'                 .. R15
+POINTR0  DC    X'00'                 .. R0
+NO       DC    CL3'NO'
+YES      DC    CL3'YES'
+SUBHD1   DC    C' MODULE ATTRIBUTES '
+SUBHD1L  EQU   *-SUBHD1
+MSG01    DS    0C
+         DC    CL12'MEMBER NAME:'
+MSG01MEM DC    CL08' '
+         DC    CL10' '
+         DC    CL06'ALIAS:'
+MSG01ALS DC    CL03' '
+         DC    CL21' '
+         DC    CL09'TEXT TTR:'
+MSG01TXT DC    CL06' '
+MSG01L   EQU   *-MSG01
+MSG02    DS    0C
+         DC    CL17'NOTELIST ENTRIES:'
+MSG02NTE DC    CL04' '
+         DC    CL09' '
+         DC    CL17'LOAD MODULE SIZE:'
+MSG02SZ  DC    CL06' '
+         DC    CL07' '
+         DC    CL12'ENTRY POINT:'
+MSG02EPA DC    CL06' '
+         DC    CL12' '
+         DC    CL17'REAL MEMBER NAME:'
+MSG02MEM DC    CL8' '
+MSG02L   EQU   *-MSG02
+EMSG00   DC    C'DISASM1300E DISMOD DD NOT USABLE'
+EMSG00L  EQU   *-EMSG00
+EMSG01   DC    C'DISASM1301E SPECIFIED CSECT NOT FOUND'
+EMSG01L  EQU   *-EMSG01
+EMSG02   DC    C'DISASM1302E UNKNOWN RETURN CODE FROM POINT MACRO'
+EMSG02L  EQU   *-EMSG02
+EMSG3    DC    C'DISASM1303E END OF FILE ON DISMOD PRIOR TO END CARD'
+EMSG3L   EQU   *-EMSG3
+EMSG20   DC    AL1(L'EMSG20T)
+EMSG20T  DC    C'DISASM1320E SYM RECORD HAS UNKNOWN FORMAT'
+BLDLMSGS DS    0C
+         DC    X'0400',CL55'DISASM1304E MODULE DOES NOT EXIST IN DISMOD+
+                LIBRARY'
+BLDLMSGL EQU   *-BLDLMSGS
+         DC    X'0800',CL55'DISASM1305E PERMANENT I/O ERROR'
+         DC    X'0804',CL55'DISASM1306E INSUFFICIENT VIRTUAL STORAGE'
+         DC    X'0808',CL55'DISASM1307E DEB NOT IN KEY 0-7'
+         DC    X'FF'
+PNTMSGS  DS    0C
+         DC    X'0400',CL55'DISASM1308E DEVICE DOES NOT SUPPORT BLOCK I+
+               DENTIFIER'
+PNTMSGL  EQU   *-PNTMSGS
+         DC    X'0801',CL55'DISASM1309E INCORRECT PARAMETER'
+         DC    X'0802',CL55'DISASM1310E INCORRECT DEB OR DEBCHK ERROR'
+         DC    X'0803',CL55'DISASM1311E ENVIRONMENTAL ERROR'
+         DC    X'080B',CL55'DISASM1312E UNSUCCESSFUL CALL TO ESTAE'
+         DC    X'080C',CL55'DISASM1313E UNSUCCESSFUL GETMAIN'
+         DC    X'0C00',CL55'DISASM1314E INPUT/OUTPUT ERROR'
+         DC    X'FF'
+*---------------------------------------------------------------------*
+*                                                                     *
+*              OBJECT MODULE LIBRARY DCB                              *
+*                                                                     *
+*---------------------------------------------------------------------*
+DISMOD   DCB   DDNAME=DISMOD,        OBJECT MODULE LIBRARY DCB         +
+               DSORG=PS,             .. SEQUENTIAL DATA SET            +
+               RECFM=U,              .. UNDEFINED RECORD FORMAT        +
+               EODAD=EOD00000,       .. END OF DATA                    +
+               EXLST=EXITLIST,       .. JFCB ADDRESS POINTER           *
+               MACRF=R               .. READ ONLY
+DISMODL  EQU   *-DISMOD
+DISMODPO DCB   DDNAME=DISMOD,        OBJECT MODULE LIBRARY DCB         +
+               DSORG=PO,             .. PARTITIONED DATA SET           +
+               RECFM=U,              .. UNDEFINED RECORD FORMAT        +
+               EODAD=EOD00000,       .. END OF DATA                    +
+               EXLST=EXITLIST,       .. JFCB ADDRESS POINTER           *
+               MACRF=R               .. READ ONLY
+EXITLIST DC    A(X'87000000')
+         SPACE 1
+MYJFCB   DS    0D
+         IEFJFCBN ,          MY JFCB
+         SPACE 1
+MYDSCB   DS    0D
+         IECSDSL1 1          MY FMT 1 DSCB
+         SPACE 2
+*---------------------------------------------------------------------*
+*                                                                     *
+*              COMMON DATA MAP                                        *
+*                                                                     *
+*---------------------------------------------------------------------*
+DISASM00 DISASMCM TYPE=DSECT
+         COPY  DISASMDA
+         DCBD  DEVD=DA
+         IEZIOB ,
+         IHADECB ,
+         END  DISASM13

@@ -1,0 +1,248 @@
+DA06     TITLE 'DISASM06 - TEXT VERIFY / REPLACE / PRINT'       GP10082
+*--------------------------------------------------------------------*
+*                                                                    *
+*  Module name: DISASM06                                             *
+*                                                                    *
+*  Function:                                                         *
+*   TEXT printer.  The object module will have already been read     *
+*   into storage by the module reader DISASM03.  Fields COMMTXT and  *
+*   COMMCSLN in DISASM00 will have been set to the address and       *
+*   length of the module in storage.                                 *
+*                                                                    *
+*--------------------------------------------------------------------*
+         COPY  DISASMGB
+DISASM06 MODHEAD ,           ENTRY HOUSEKEEPING                 GP99140
+         ICM   R3,15,COMMVERS        ANY VERIFY DATA ?          GP10082
+         BZ    DOREPS                NO; CHECK FOR REPLACE      GP10082
+         USING VERPSECT,R3           DECLARE VERIFY BLOCK       GP10082
+         SR    R9,R9                 FLAG FOR ALL VERIFIED      GP10082
+VERLOOP  LM    R14,R15,VERPOFFS      LOAD OFFSET AND LENGTH     GP10082
+         LA    R1,0(R15,R14)         LAST BYTE                  GP10082
+         C     R1,COMMCSLN           IN RANGE?                  GP10082
+         BNL   VERBUMP               NO; IGNORE (LATER MSG?)    GP10082
+         A     R14,COMMTXT           RELOCATE                   GP10082
+         EX    R15,EXVERTEX          VERIFIES ?                 GP10082
+         BE    VERBUMP               YES                        GP10082
+         LR    R9,R14                TOO BAD                    GP10082
+         MVC   PRTDATA(MSG05L),MSG05E      MAKE MESSAGE         GP10082
+         SHEX  PRTDATA+MSG05O-MSG05E,VERPOFFS  SHOW OFFSET      GP10082
+         BAL   R14,PRINTREC                                     GP10082
+VERBUMP  ICM   R3,15,VERPNEXT        NEXT REQUEST               GP10082
+         BNZ   VERLOOP               TEST IT                    GP10082
+         LTR   R9,R9                 ANY ERROR                  GP10082
+         BZ    DOREPS                NO; CHECK FOR REPS         GP10082
+         MVC   PRTDATA(MSG06L),MSG06E      MAKE MESSAGE         GP10082
+         BAL   R14,PRINTREC                                     GP10082
+         OI    COMMFLAG,$ERROR+$ABORT  NO-NO                    GP10082
+         B     TAKEDUMP              QUIT AFTER DUMPING TEXT    GP10082
+DOREPS   ICM   R3,15,COMMREPS        ANY REPLACE DATA?          GP10082
+         BZ    TESTDUMP              NO; CHECK FOR PRINT        GP10082
+         USING VERPSECT,R3           DECLARE REPLACE BLOCK      GP10082
+REPLOOP  LM    R14,R15,VERPOFFS      LOAD OFFSET AND LENGTH     GP10082
+         LA    R1,0(R15,R14)         LAST BYTE                  GP10082
+         C     R1,COMMCSLN           IN RANGE?                  GP10082
+         BNL   REPBUMP               NO; IGNORE (LATER MSG?)    GP10082
+         A     R14,COMMTXT           RELOCATE                   GP10082
+         EX    R15,EXREPTEX          REPLACE                    GP10082
+REPBUMP  ICM   R3,15,VERPNEXT        NEXT REQUEST               GP10082
+         BNZ   REPLOOP               TEST IT                    GP10082
+         MVC   PRTDATA(MSG08L),MSG08I      MAKE MESSAGE         GP10082
+         BAL   R14,PRINTREC                                     GP10082
+         B     TESTDUMP              CHECK FOR STORAGE DUMP     GP10082
+         SPACE 1
+EXVERTEX CLC   VERPTEXT(0),0(R14)    VERIFY MATCHES ?           GP10082
+EXREPTEX MVC   0(0,R14),VERPTEXT     REPLACE TEXT               GP10082
+         DROP  R3                                               GP10082
+         SPACE 2                                                GP10082
+TESTDUMP TM    PRINTFG2,$PFHEX       PRINTING TEXT?             GP99132
+         BZ    EXIT0000              NO; JUST GET OUT           GP99132
+TAKEDUMP MVC   COMMSUBH(SUBHEADL),SUBHEAD
+         LA    R1,SUBHEADL           SUBHEADING LENGTH
+         STH   R1,COMMSUBL           SET LENGTH
+         MVI   PRTCMD,$PRTHEAD       FORCED HEADING
+         BAL   R14,PRINTDAT          PRINT FORCED HEADING       GP99138
+         L     R3,COMMCSLN           CSECT'S LENGTH
+         L     R4,COMMTXT            TEXT'S ADDRESS
+         XC    TEXTDISP,TEXTDISP     INITIALIZE DISPLACEMENT
+TEXT0020 DS    0H
+         LR    R5,R3                 COPY LENGTH
+         CH    R5,COMMH32            MORE THAN 1 LINE'S WORTH?
+         BNH   TEXT0030              NO
+         LH    R5,COMMH32            LIMIT TO 1 LINE
+TEXT0030 DS    0H
+         MVC   MSG01HX,COMMBLKS      INITIALIZE HEX DATA
+         MVC   MSG01CH,COMMBLKS      INITIALIZE CHARACTER DATA
+         UNPK  MSG01DSP(9),TEXTDISP(5)
+         TR    MSG01DSP,COMMHXTR     TRANSLATE TO PRINTABLE     GP99132
+         MVI   MSG01DSP+8,C' '       RESTORE BLANK
+         UNPK  WORKHX1(9),00(5,R4)   UNPACK DATA
+         UNPK  WORKHX2(9),04(5,R4)   UNPACK DATA
+         UNPK  WORKHX3(9),08(5,R4)   UNPACK DATA
+         UNPK  WORKHX4(9),12(5,R4)   UNPACK DATA
+         UNPK  WORKHX5(9),16(5,R4)   UNPACK DATA
+         UNPK  WORKHX6(9),20(5,R4)   UNPACK DATA
+         UNPK  WORKHX7(9),24(5,R4)   UNPACK DATA
+         UNPK  WORKHX8(9),28(5,R4)   UNPACK DATA
+         TR    WORKHX1,COMMHXTR      TRANSLATE TO PRINTABLE     GP99132
+         TR    WORKHX2,COMMHXTR      TRANSLATE TO PRINTABLE     GP99132
+         TR    WORKHX3,COMMHXTR      TRANSLATE TO PRINTABLE     GP99132
+         TR    WORKHX4,COMMHXTR      TRANSLATE TO PRINTABLE     GP99132
+         TR    WORKHX5,COMMHXTR      TRANSLATE TO PRINTABLE     GP99132
+         TR    WORKHX6,COMMHXTR      TRANSLATE TO PRINTABLE     GP99132
+         TR    WORKHX7,COMMHXTR      TRANSLATE TO PRINTABLE     GP99132
+         TR    WORKHX8,COMMHXTR      TRANSLATE TO PRINTABLE     GP99132
+         MVI   WORKHX1+8,C' '        RESTORE BLANK
+         MVI   WORKHX2+8,C' '        RESTORE BLANK
+         MVI   WORKHX3+8,C' '        RESTORE BLANK
+         MVI   WORKHX4+8,C' '        RESTORE BLANK
+         MVI   WORKHX5+8,C' '        RESTORE BLANK
+         MVI   WORKHX6+8,C' '        RESTORE BLANK
+         MVI   WORKHX7+8,C' '        RESTORE BLANK
+         LR    R1,R5                 COPY LENGTH
+         LA    R1,LENTBLE(R1)        PRINT LENGTH'S ADDRESS
+         SR    R2,R2                 CLEAR REGISTER
+         IC    R2,0(,R1)             PRINT LENGTH
+         BCTR  R2,0                  MINUS 1 FOR EXECUTE
+         EX    R2,HEXMVC             MOVE HEX DATA
+         LR    R1,R5                 COPY LENGTH
+         BCTR  R1,0                  MINUS 1 FOR EXECUTES
+         EX    R1,CHARMVC            MOVE CHARACTER
+         EX    R1,CHARTR             TRANSLATE UNPRINTABLES TO PERIODS
+         MVC   PRTDATA(MSG01L),MSG01 SET MESSAGE
+         BAL   R10,PRT0000           PRINT TEXT
+         L     R1,TEXTDISP           CURRENT DISPLACEMENT       GP99140
+         LA    R1,32(,R1)            UPDATE DISPLACEMENT
+         ST    R1,TEXTDISP           SAVE UPDATED DISPLACEMENT  GP99140
+         LA    R4,32(,R4)            NEXT TEXT
+         SR    R3,R5                 MINUS LENGTH PRINTED
+         BNZ   TEXT0020              CONTINUE
+         B     EXIT0000              EXIT
+PRT0000  DS    0H
+         TM    COMMFLAG,$ERROR       ERROR MESSAGE?             GP99132
+         BNZ   PRT0005               YES; PRINT IT              GP99132
+         TM    PRINTFG2,$PFHEX       PRINT CSECT TEXT ?         GP99132
+         BNZ   PRT0005               YES                        GP99132
+         MVI   PRTDATA,C' '          JUST CLEAR                 GP99132
+         MVC   PRTDATA+1(L'PRTDATA-1),PRTDATA   PRINT BUFFER    GP99132
+         BR    R10                   JUST RETURN                GP99132
+PRT0005  BAL   R14,PRINTREC                                     GP99138
+         BR    R10                   RETURN
+EXIT0000 DS    0H
+         ITRACE ID=EXIT
+         L     R13,4(,R13)           RESTORE REGISTER 13
+         LM    R14,R12,12(R13)       RESTORE ALL OTHER REGISTERS
+         SR    R15,R15               GIVE GOOD RETURN CODE
+         BR    R14                   RETURN TO CALLER
+HEXMVC   MVC   MSG01HX(0),HEXWORK    MOVE HEX TO PRINT MESSAGE
+CHARMVC  MVC   MSG01CH(0),0(R4)      MOVE CHARACTER TO PRINT
+CHARTR   TR    MSG01CH(0),PRTTABLE   TRANSLATE ALL TO PRINTABLE
+*---------------------------------------------------------------------*
+*                                                                     *
+*              WORK AREAS                                             *
+*                                                                     *
+*---------------------------------------------------------------------*
+TEXTDISP DC    A(0)                                             GP99140
+SUBHEAD  DC    C' TEXT '
+SUBHEADL EQU   *-SUBHEAD
+MSG01    DS    0C
+MSG01DSP DC    CL08' '
+         DC    CL03' '
+MSG01HX  DC    CL73' '
+         DC    CL03' '
+MSG01CH  DC    CL32' '
+MSG01L   EQU   *-MSG01
+         SPACE 1
+MSG05E   DC    C'DISASM0605E VERIFY AT '                        GP10082
+MSG05O   DC    CL8' ',C' NOT MATCHED'                           GP10082
+MSG05L   EQU   *-MSG05E                                         GP10082
+         SPACE 1                                                GP10082
+MSG06E   DC    C'DISASM0606E UNMATCHED VERIFY TEXT; DUMPING TEXT'
+MSG06L   EQU   *-MSG06E                                         GP10082
+         SPACE 1                                                GP10082
+MSG08I   DC    C'DISASM0608I REPLACE TEXT APPLIED'              GP10082
+MSG08L   EQU   *-MSG08I                                         GP10082
+         SPACE 1
+LENTBLE  DC    AL1(00)                  NOT USED
+         DC    AL1(02)                  WHEN LENGTH = 01
+         DC    AL1(04)                  WHEN LENGTH = 02
+         DC    AL1(06)                  WHEN LENGTH = 03
+         DC    AL1(08)                  WHEN LENGTH = 04
+         DC    AL1(11)                  WHEN LENGTH = 05
+         DC    AL1(13)                  WHEN LENGTH = 06
+         DC    AL1(15)                  WHEN LENGTH = 07
+         DC    AL1(17)                  WHEN LENGTH = 08
+         DC    AL1(20)                  WHEN LENGTH = 09
+         DC    AL1(22)                  WHEN LENGTH = 10
+         DC    AL1(24)                  WHEN LENGTH = 11
+         DC    AL1(26)                  WHEN LENGTH = 12
+         DC    AL1(29)                  WHEN LENGTH = 13
+         DC    AL1(31)                  WHEN LENGTH = 14
+         DC    AL1(33)                  WHEN LENGTH = 15
+         DC    AL1(35)                  WHEN LENGTH = 16
+         DC    AL1(40)                  WHEN LENGTH = 17
+         DC    AL1(42)                  WHEN LENGTH = 18
+         DC    AL1(44)                  WHEN LENGTH = 19
+         DC    AL1(46)                  WHEN LENGTH = 20
+         DC    AL1(49)                  WHEN LENGTH = 21
+         DC    AL1(51)                  WHEN LENGTH = 22
+         DC    AL1(53)                  WHEN LENGTH = 23
+         DC    AL1(55)                  WHEN LENGTH = 24
+         DC    AL1(58)                  WHEN LENGTH = 25
+         DC    AL1(60)                  WHEN LENGTH = 26
+         DC    AL1(62)                  WHEN LENGTH = 27
+         DC    AL1(64)                  WHEN LENGTH = 28
+         DC    AL1(67)                  WHEN LENGTH = 29
+         DC    AL1(69)                  WHEN LENGTH = 30
+         DC    AL1(71)                  WHEN LENGTH = 31
+         DC    AL1(73)                  WHEN LENGTH = 32
+HEXWORK  DS    0C
+WORKHX1  DC    CL8' '
+         DC    CL1' '
+WORKHX2  DC    CL8' '
+         DC    CL1' '
+WORKHX3  DC    CL8' '
+         DC    CL1' '
+WORKHX4  DC    CL8' '
+         DC    CL3' '
+WORKHX5  DC    CL8' '
+         DC    CL1' '
+WORKHX6  DC    CL8' '
+         DC    CL1' '
+WORKHX7  DC    CL8' '
+         DC    CL1' '
+WORKHX8  DC    CL8' '
+         DC    CL1' '
+PRTTABLE DC    256C'.'
+         ORG   PRTTABLE+X'40'
+         DC    C' '
+         ORG   PRTTABLE+X'4A'
+         DC    C'¢.<(+|'
+         DC    X'50'
+         ORG   PRTTABLE+X'5A'
+         DC    C'!$*);¬-/'
+         ORG   PRTTABLE+X'6B'
+         DC    C',%_>?'
+         ORG   PRTTABLE+X'7A'
+         DC    C':#@'
+         DC    X'7D'
+         DC    C'="'
+         ORG   PRTTABLE+X'C0'
+         DC    C'{ABCDEFGHI'
+         ORG   PRTTABLE+X'D0'
+         DC    C'}JKLMNOPQR'
+         ORG   PRTTABLE+X'E2'
+         DC    C'STUVWXYZ'
+         ORG   PRTTABLE+X'F0'
+         DC    C'0123456789'
+         ORG   PRTTABLE+256
+         SPACE 2
+         LTORG
+         SPACE 2
+         COPY  DISASMDA                MAPPINGS                 GP10082
+*---------------------------------------------------------------------*
+*                                                                     *
+*              COMMON DATA MAP                                        *
+*                                                                     *
+*---------------------------------------------------------------------*
+DISASM00 DISASMCM TYPE=DSECT
+         END  DISASM06

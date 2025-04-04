@@ -1,0 +1,582 @@
+DADB     TITLE 'DISASMDB - DEBUG MODULE'
+*--------------------------------------------------------------------*
+*                                                                    *
+*  Module name: DISASMDB                                             *
+*                                                                    *
+*  Function:                                                         *
+*   If DISDEBUG DD is allocated, many internal fields and data       *
+*   chains will be printed for trouble shooting.                     *
+*                                                                    *
+*   There are two "functions".  Normal function is to print the      *
+*   internal fields and run the internal data chains.  The secondary *
+*   function is to print the assembler output for module DISASM07.   *
+*                                                                    *
+*   NOTE:  Several fields are copied to a work field before          *
+*          "unpacking" them for printing.  When "unpacking" the      *
+*          field, 1 more byte than printed is unpacked.  When the    *
+*          field is the last field in the data area, an S0C4 abend   *
+*          can occur.  Copying the field before unpacking was to     *
+*          prevent these S0C4 abends.  If any data area is modified  *
+*          and some other field is added to the end of the area,     *
+*          beware that if it is unpacked for printing it may need    *
+*          to be copied before unpacking.                            *
+*                                                                    *
+*--------------------------------------------------------------------*
+*                                                                    *
+*   OUTPUT CHANGED TO PLACE BLOCK ADDRESS PRIOR TO IDENTIFIER.       *
+*   MINOR OTHER CORRECTIONS.                              GYP 05/99  *
+*                                                                    *
+*--------------------------------------------------------------------*
+         SPACE 1                                                GP99136
+         COPY  DISASMGB
+DISASMDB MODHEAD ,           ENTRY HOUSEKEEPING                 GP99140
+         LR    R9,R1                 COPY PARAMETER BLOCK ADDRESS
+         USING DBUGBLOK,R9           DECLARE IT
+         ITRACE ID=ENTRY,                                              +
+               DATA1=DBUGCMD
+         TM    COMMDD,$DEBUGDD       DEBUG DD PRESENT?
+         BNO   DBUG1000              NO, TRACE ENTRY BEFORE EXIT
+         TM    DBUGFLAG,$DBUGOPN     DEBUG ALREADY OPEN?
+         BO    DBUG0005              YES
+         OI    DBUGFLAG,$DBUGOPN     INDICATE DCB IS OPEN
+         OPEN  (DISDEBUG,OUTPUT)     OPEN DISDEBUG
+DBUG0005 DS    0H
+         CLI   DBUGCMD,$DBUGHD       HEADING?
+         BE    DBUG0300              YES
+         CLI   DBUGCMD,$DBUGPRT      PRINT?
+         BE    DBUG0310              YES
+         BAL   R10,HEAD0000          PRINT DEBUG HEADING
+* ------------------------------------------------------------------- *
+*             PRINT TRACE TABLE CONTROL                               *
+* ------------------------------------------------------------------- *
+DBUG0010 MVC   OUTDATA(PRTRL),PRTR   TRACE DATA                 GP99138
+         SHEX  OUTDATA+PRTR1ST-PRTR,TR1ST     TRACE FIRST       GP10085
+         SHEX  OUTDATA+PRTRLAST-PRTR,TRLAST   TRACE LAST        GP10085
+         SHEX  OUTDATA+PRTRCURR-PRTR,TRCURR   TRACE CURRENT     GP10085
+         BAL   R10,PRT0000           PRINT TRACE DATA
+* ------------------------------------------------------------------- *
+*             PRINT DISMOD I/O AREA ADDRESS                           *
+* ------------------------------------------------------------------- *
+         MVC   OUTDATA(PRIOL),PRIO   TRACE DATA                 GP99138
+         SHEX  OUTDATA+PRIOA-PRIO,COMMIO      I/O BUFFER        GP10085
+         BAL   R10,PRT0000           PRINT TRACE DATA
+* ------------------------------------------------------------------- *
+*             CHASE ESD CHAIN                                         *
+* ------------------------------------------------------------------- *
+DBUG0020 ICM   R3,15,COMMESD         FIRST ESD ENTRY
+         USING ESDDATA,R3            DEFINE BASE
+         BZ    DBUG0040              NO ESD ENTRIES
+         MVI   OUTCC,C'0'            DOUBLE SPACE               GP99138
+DBUG0030 MVC   OUTDATA(PRESDL),PRESD COPY ESD DATA TO PRINT AREA
+         SHEX  OUTDATA+PRESDBA-PRESD,(R3),4   ESD ADDRESS       GP10085
+         SHEX  OUTDATA+PRESDNXT-PRESD,ESDNEXT    LINK           GP10085
+         OC    OUTDATA+PRESDNM-PRESD(L'ESDNAME),ESDNAME         GP10085
+         SHEX  OUTDATA+PRESDTYP-PRESD,ESDTYPE    TYPE (SD,LD,)  GP10085
+         SHEX  OUTDATA+PRESDADR-PRESD,ESDADDR    ADDRESS        GP10085
+         SHEX  OUTDATA+PRESDSEG-PRESD,ESDSEG     SEGMENT ID     GP10085
+         MVC   WORKX,ESDLEN          COPY TO WORK AREA
+         SHEX  OUTDATA+PRESDLEN-PRESD,WORKX      LENGTH         GP10085
+         BAL   R10,PRT0000           PRINT ESD DATA
+         ICM   R3,15,ESDNEXT         NEXT ESD BLOCK
+         BNZ   DBUG0030              LOOP
+* ------------------------------------------------------------------- *
+*             CHASE RLD CHAIN                                         *
+* ------------------------------------------------------------------- *
+DBUG0040 ICM   R3,15,COMMRLD         FIRST RLD ENTRY
+         USING RLDDATA,R3            DEFINE BASE
+         BZ    DBUGVERS              NO RLD ENTRIES             GP10085
+         MVI   OUTCC,C'0'            DOUBLE SPACE               GP99138
+DBUG0050 MVC   OUTDATA(PRRLDL),PRRLD MOVE RLD DATA              GP99138
+         SHEX  OUTDATA+PRRLDBA-PRRLD,(R3),4   RLD ADDRESS       GP10085
+         SHEX  OUTDATA+PRRLDNXT-PRRLD,RLDNEXT    LINK           GP10085
+         SHEX  OUTDATA+PRRLDDSP-PRRLD,RLDDISP    OFFSET         GP10085
+         SHEX  OUTDATA+PRRLDTYP-PRRLD,RLDTYPE    TYPE           GP10085
+         SHEX  OUTDATA+PRRLDLEN-PRRLD,RLDLEN     LENGTH         GP10085
+         SHEX  OUTDATA+PRRLDPTR-PRRLD,RLDPTR     ESD ID         GP10085
+         SHEX  OUTDATA+PRRLDPP-PRRLD,RLDPP       REF ID         GP10085
+         MVC   OUTDATA+PRRLDDIR-PRRLD(L'RLDDIR),RLDDIR +/-      GP10085
+         SHEX  OUTDATA+PRRLDESD-PRRLD,RLDESD     ESD BLOCK      GP10085
+         BAL   R10,PRT0000           PRINT RLD DATA
+         ICM   R3,15,RLDNEXT         NEXT RLD BLOCK
+         BNZ   DBUG0050              LOOP
+* ------------------------------------------------------------------- *
+*             CHASE VERIFY CHAIN                                      *
+* ------------------------------------------------------------------- *
+DBUGVERS ICM   R3,15,COMMVERS        FIRST VERIFY               GP10085
+         USING VERPSECT,R3           DEFINE BASE                GP10085
+         BZ    DBUGREPS              NO VERIFY ENRIES           GP10085
+         MVI   OUTCC,C'0'            DOUBLE SPACE               GP99138
+DBUGVERL MVC   OUTDATA(PRVERPL),PRVERP      VERIFY HEADER       GP10085
+         LA    R0,1          ADDEND                             GP10085
+         A     R0,VERPLEN    MAKE TRUE LENGTH                   GP10085
+         SHEX  OUTDATA+PRVERBA-PRVERP,(R0),4   VER ADDRESS      GP10085
+         SHEX  OUTDATA+PRVERNXT-PRVERP,VERPNEXT   LINK          GP10085
+         SHEX  OUTDATA+PRVEROFF-PRVERP,VERPOFFS   OFFSET        GP10085
+         SHEX  OUTDATA+PRVERLEN-PRVERP,VERPLEN    LENGTH-1      GP10085
+         SHEX  OUTDATA+PRVERTXT-PRVERP,VERPTEXT,4               GP10085
+         SH    R0,COMMH4                                        GP10085
+         BNP   DBUGVERU                                         GP10085
+         SHEX  OUTDATA+PRVERTX2-PRVERP,VERPTEXT+4,4             GP10085
+         SH    R0,COMMH4                                        GP10085
+         BNP   DBUGVERU                                         GP10085
+         SHEX  OUTDATA+PRVERTX3-PRVERP,VERPTEXT+8,4             GP10085
+         SH    R0,COMMH4                                        GP10085
+         BNP   DBUGVERU                                         GP10085
+         SHEX  OUTDATA+PRVERTX4-PRVERP,VERPTEXT+12,4            GP10085
+         SH    R0,COMMH4                                        GP10085
+         BNP   DBUGVERU                                         GP10085
+         SHEX  OUTDATA+PRVERTX5-PRVERP,VERPTEXT+16,4            GP10085
+         SH    R0,COMMH4                                        GP10085
+         BNP   DBUGVERU                                         GP10085
+         SHEX  OUTDATA+PRVERTX6-PRVERP,VERPTEXT+20,4            GP10085
+DBUGVERU BAL   R10,PRT0000           PRINT VER DATA             GP10085
+         ICM   R3,15,VERPNEXT        NEXT VER BLOCK             GP10085
+         BNZ   DBUGVERL              LOOP
+* ------------------------------------------------------------------- *
+*             CHASE REPLACE CHAIN                                     *
+* ------------------------------------------------------------------- *
+DBUGREPS ICM   R3,15,COMMREPS        FIRST REPLACE              GP10085
+         USING VERPSECT,R3           DEFINE BASE                GP10085
+         BZ    DBUG0060              NO REPLACES                GP10085
+         MVI   OUTCC,C'0'            DOUBLE SPACE               GP99138
+DBUGREPL MVC   OUTDATA(PRVERPL),PRVERP      VERIFY HEADER       GP10085
+         MVC   OUTDATA+PRVERB-PRVERP(L'PRVERB),=C'REPLACE'      GP10085
+         LA    R0,1          ADDEND                             GP10085
+         A     R0,VERPLEN    MAKE TRUE LENGTH                   GP10085
+         SHEX  OUTDATA+PRVERBA-PRVERP,(R0),4   REP ADDRESS      GP10085
+         SHEX  OUTDATA+PRVERNXT-PRVERP,VERPNEXT   LINK          GP10085
+         SHEX  OUTDATA+PRVEROFF-PRVERP,VERPOFFS   OFFSET        GP10085
+         SHEX  OUTDATA+PRVERLEN-PRVERP,VERPLEN    LENGTH-1      GP10085
+         SHEX  OUTDATA+PRVERTXT-PRVERP,VERPTEXT,4               GP10085
+         SH    R0,COMMH4                                        GP10085
+         BNP   DBUGREPU                                         GP10085
+         SHEX  OUTDATA+PRVERTX2-PRVERP,VERPTEXT+4,4             GP10085
+         SH    R0,COMMH4                                        GP10085
+         BNP   DBUGREPU                                         GP10085
+         SHEX  OUTDATA+PRVERTX3-PRVERP,VERPTEXT+8,4             GP10085
+         SH    R0,COMMH4                                        GP10085
+         BNP   DBUGREPU                                         GP10085
+         SHEX  OUTDATA+PRVERTX4-PRVERP,VERPTEXT+12,4            GP10085
+         SH    R0,COMMH4                                        GP10085
+         BNP   DBUGREPU                                         GP10085
+         SHEX  OUTDATA+PRVERTX5-PRVERP,VERPTEXT+16,4            GP10085
+         SH    R0,COMMH4                                        GP10085
+         BNP   DBUGREPU                                         GP10085
+         SHEX  OUTDATA+PRVERTX6-PRVERP,VERPTEXT+20,4            GP10085
+DBUGREPU BAL   R10,PRT0000           PRINT VER DATA             GP10085
+         ICM   R3,15,VERPNEXT        NEXT VER BLOCK             GP10085
+         BNZ   DBUGREPL              LOOP
+* ------------------------------------------------------------------- *
+*             CHASE USING CHAIN                                       *
+* ------------------------------------------------------------------- *
+DBUG0060 ICM   R3,15,COMMUSNG        FIRST USING ENTRY
+         USING USNGDSCT,R3           DEFINE BASE
+         BZ    DBUG0080              NO USING ENTRIES
+         MVI   OUTCC,C'0'            DOUBLE SPACE               GP99138
+DBUG0070 MVC   OUTDATA(PRUSNGL),PRUSNG                          GP99138
+         SHEX  OUTDATA+PRUSGBA-PRUSNG,(R3),4   RLD ADDRESS      GP10085
+         SHEX  OUTDATA+PRUSGNXT-PRUSNG,USNGNEXT   LINK          GP10085
+         MVC   OUTDATA+PRUSGNME-PRUSNG(L'USNGDSNM),USNGDSNM     GP10085
+         MVC   OUTDATA+PRUSGLBL-PRUSNG(L'USNGLBNM),USNGLBNM     GP10085
+         MVC   OUTDATA+PRUSGBSE-PRUSNG(L'USNGBASE),USNGBASE     GP10085
+         TR    OUTDATA+PRUSGBSE-PRUSNG(L'USNGBASE),COMMHXCH     GP10085
+         SHEX  OUTDATA+PRUSGFLG-PRUSNG,USNGFLAG   FLAGS         GP10085
+         SHEX  OUTDATA+PRUSGDSP-PRUSNG,USNGDISP                 GP10085
+         SHEX  OUTDATA+PRUSGBGN-PRUSNG,USNGBEGN,FILL=C'-'       GP10085
+         MVC   WORKX,USNGEND         COPY TO WORK FIELD
+         SHEX  OUTDATA+PRUSGEND-PRUSNG,WORKX  END ADDR          GP10085
+         BAL   R10,PRT0000           PRINT USING DATA
+         ICM   R3,15,USNGNEXT        NEXT USING BLOCK
+         BNZ   DBUG0070              LOOP
+* ------------------------------------------------------------------- *
+*             CHASE DSECT CHAIN                                       *
+* ------------------------------------------------------------------- *
+DBUG0080 ICM   R3,15,COMMDSCT        FIRST DSECT ENTRY
+         USING DSCTDSCT,R3           DEFINE BASE
+         BZ    DBUG0110              NO DSECT ENTRIES
+         MVI   OUTCC,C'0'            DOUBLE SPACE               GP99138
+DBUG0090 MVC   OUTDATA(PRDSCTL),PRDSCT                          GP99138
+         SHEX  OUTDATA+PRDSBA-PRDSCT,(R3),4    DSB ADDRESS      GP10085
+         SHEX  OUTDATA+PRDSNXT-PRDSCT,DSCTNEXT    LINK          GP10085
+         MVC   OUTDATA+PRDSNAME-PRDSCT(L'DSCTNAME),DSCTNAME     GP10085
+         MVC   WORKX,DSCTLBA         COPY TO AVOID 0C4          GP99136
+         SHEX  OUTDATA+PRDSLABL-PRDSCT,WORKX  END ADDR          GP10085
+         BAL   R10,PRT0000           PRINT DSECT DATA
+         ICM   R4,15,DSCTLBA         FIRST LABEL FROM DSECT
+         BZ    DBUG0100              NO LABELS
+         BAL   R8,DBUG0180           FOLLOW LABEL CHAIN
+DBUG0100 ICM   R3,15,DSCTNEXT        NEXT DSECT
+         BNZ   DBUG0090              LOOP
+* ------------------------------------------------------------------- *
+*             CHASE BASE CHAIN                                        *
+* ------------------------------------------------------------------- *
+DBUG0110 ICM   R3,15,COMMBASE        FIRST BASE ENTRY
+         USING BASEDSCT,R3           DEFINE BASE
+         BZ    DBUG0130              NO DSECT ENTRIES
+         MVI   OUTCC,C'0'            DOUBLE SPACE               GP99138
+DBUG0120 MVC   OUTDATA(PRBASEL),PRBASE  NOT NEEDED ?            GP10085
+         SHEX  OUTDATA+PRBSEBA-PRBASE,(R3),4   RLD ADDRESS      GP10085
+         SHEX  OUTDATA+PRBSENXT-PRBASE,BASENEXT   LINK          GP10085
+         SHEX  OUTDATA+PRBSEBGN-PRBASE,BASEBEGN,FILL=C'-'       GP10085
+         SHEX  OUTDATA+PRBSEEND-PRBASE,BASEEND   END RANGE      GP10085
+         SHEX  OUTDATA+PRBSEDSP-PRBASE,BASEDISP  BASE VALUE     GP10085
+         SHEX  OUTDATA+PRBSEREG-PRBASE,BASEREG   REGISTER       GP10085
+         MVC   OUTDATA+PRBSEREG-PRBASE(2),OUTDATA+PRBSEREG-PRBASE+1 085
+         BAL   R10,PRT0000           PRINT BASE DATA
+         ICM   R3,15,BASENEXT        NEXT BASE BLOCK
+         BNZ   DBUG0120              LOOP
+* ------------------------------------------------------------------- *
+*             CHASE DATA BLOCK CHAIN                                  *
+* ------------------------------------------------------------------- *
+DBUG0130 ICM   R3,15,COMMDATA        FIRST DATA ENTRY
+         USING DATADSCT,R3           DEFINE BASE
+         BZ    DBUG0150              NO DSECT ENTRIES
+         MVI   OUTCC,C'0'            DOUBLE SPACE               GP99138
+DBUG0140 MVC   OUTDATA(PRDATAL),PRDATA                          GP99138
+         CLI   DATATYPE,$DATADS   FILLER ?                      GP10085
+         BNE   DBUG0142           NO                            GP10085
+         MVC   OUTDATA+PRDTADC-PRDATA(4),=C'FILL'   IDENTIFY    GP10085
+DBUG0142 SHEX  OUTDATA+PRDTABA-PRDATA,(R3),4   RLD ADDRESS      GP10085
+         SHEX  OUTDATA+PRDTANXT-PRDATA,DATANEXT   LINK          GP10085
+         SHEX  OUTDATA+PRDTABGN-PRDATA,DATABEGN,FILL=C'-'       GP10085
+         SHEX  OUTDATA+PRDTAEND-PRDATA,DATAEND    END RANGE     GP10085
+         SHEX  OUTDATA+PRDTALEN-PRDATA,DATALEN    SIZE          GP10085
+         SHEX  OUTDATA+PRDTATYP-PRDATA,DATATYPE   TYPE          GP10085
+         SHEX  OUTDATA+PRDTASMT-PRDATA,DATAASMT   ASM/USR TYPE  GP10085
+         MVC   OUTDATA+PRDTANME-PRDATA(L'DATANAME),DATANAME     GP10085
+         SHEX  OUTDATA+PRDTALBA-PRDATA,DATALBA,FILL=C'+' LBL    GP10085
+         SHEX  OUTDATA+PRDTALBD-PRDATA,DATALBD    LBL OFFSET    GP10085
+         SHEX  OUTDATA+PRDTAILN-PRDATA,DATAILEN   ITEM LENGTH   GP10085
+         BAL   R10,PRT0000           PRINT DATA DATA
+         ICM   R3,15,DATANEXT        NEXT DATA BLOCK
+         BNZ   DBUG0140              LOOP
+* ------------------------------------------------------------------- *
+*             CHASE REFERENCE BLOCK CHAIN                             *
+* ------------------------------------------------------------------- *
+DBUG0150 ICM   R3,15,COMMREF         FIRST REFERENCE BLOCK
+         USING REFDSCT,R3            DEFINE BASE
+         BZ    DBUG0170              NO REF BLOCK'S
+         MVI   OUTCC,C'0'            DOUBLE SPACE               GP99138
+DBUG0160 MVC   OUTDATA(PRREFL),PRREF                            GP99138
+         SHEX  OUTDATA+PRREFBA-PRREF,(R3),4   REF ADDRESS       GP10085
+         SHEX  OUTDATA+PRREFNXT-PRREF,REFNEXT     LINK          GP10085
+         SHEX  OUTDATA+PRREFAD1-PRREF,REFOPER1,FILL=C'-'        GP10085
+         SHEX  OUTDATA+PRREFO1D-PRREF,REFDISP1    LINK          GP10085
+         SHEX  OUTDATA+PRREFAD2-PRREF,REFOPER2,FILL=C'-'        GP10085
+         SHEX  OUTDATA+PRREFO2D-PRREF,REFDISP2    LINK          GP10085
+         MVC   WORKX,REFDISPI        COPY TO WORK AREA
+         SHEX  OUTDATA+PRREFDSP-PRREF,WORKX                     GP10085
+         BAL   R10,PRT0000           PRINT REF DATA
+         ICM   R3,15,REFNEXT         NEXT REF BLOCK
+         BNZ   DBUG0160              LOOP
+* ------------------------------------------------------------------- *
+*             CHASE LABEL CHAIN FOR CSECT                             *
+* ------------------------------------------------------------------- *
+DBUG0170 ICM   R4,15,COMMLABL        FIRST REFERENCE BLOCK
+         BZ    DBUG0200              NO CSECT LABELS
+         BAL   R8,DBUG0180           CHASE THE CHAIN
+         B     DBUG0200              PRINT DISPLACEMENT TABLE
+* ------------------------------------------------------------------- *
+*             CHASE LABEL CHAIN FOR DSECTS AND CSECTS                 *
+* ------------------------------------------------------------------- *
+         USING LABLDSCT,R4           DEFINE BASE
+DBUG0180 MVI   OUTCC,C'0'            DOUBLE SPACE               GP99138
+DBUG0190 MVC   OUTDATA(PRLABLL),PRLABL                          GP99138
+         SHEX  OUTDATA+PRLBLBA-PRLABL,(R4),4   LBL ADDRESS      GP10085
+         SHEX  OUTDATA+PRLBLNXT-PRLABL,LABLNEXT    LINK         GP10085
+         MVC   OUTDATA+PRLBLNM-PRLABL(L'LABLNAME),LABLNAME      GP10085
+         MVC   OUTDATA+PRLBLTYP-PRLABL(L'LABLTYPE),LABLTYPE     GP10085
+         SHEX  OUTDATA+PRLBLDSP-PRLABL,LABLDISP    OFFSET       GP10085
+         MVC   OUTDATA+PRLBLSRC-PRLABL(L'LABLSRCE),LABLSRCE     GP10085
+         SHEX  OUTDATA+PRLBLREF-PRLABL,LABLXREF    REF          GP10085
+         UNPK  COMMDWRD,LABLSTMT                                GP99184
+         MVC   OUTDATA+PRLBLSTM-PRLABL(L'PRLBLSTM),COMMDWRD+1   GP10085
+         BAL   R10,PRT0000           PRINT LABL DATA
+         ICM   R4,15,LABLNEXT        NEXT LABL BLOCK
+         BNZ   DBUG0190              LOOP
+         BR    R8                    RETURN
+* ------------------------------------------------------------------- *
+*             PRINT INSTRUCTION DISPLACEMENT TABLE                    *
+* ------------------------------------------------------------------- *
+DBUG0200 ICM   R3,15,COMMDISP        INSTRUCTION DISPLACEMENT TABLE
+         BZ    EXIT0000              TABLE NOT ACQUIRED
+         MVI   OUTCC,C'0'            DOUBLE SPACE               GP99138
+         MVC   OUTDATA(PRDISPL),PRDISP                          GP99138
+         BAL   R10,PRT0000           PRINT HEADING
+DBUG0210 LA    R2,OUTDATA            PRINT DATA                 GP99138
+         LA    R1,10                 10 DISPLACEMENTS PER LINE
+DBUG0220 CLC   XFFFF,0(R3)           END OF DISPLACEMENT TABLE?
+         BE    DBUG0230              YES
+         UNPK  0(9,R2),0(5,R3)       UNPACK DISPLACEMENT
+         TR    0(8,R2),COMMHXTR      TRANSLATE TO PRINTABLE     GP99132
+         MVI   8(R2),C' '            RESTORE BLANK
+         LA    R2,9(,R2)             NEXT IN PRINT AREA
+         LA    R3,4(,R3)             NEXT DISPLACEMENT
+         BCT   R1,DBUG0220           LOOP
+         BAL   R10,PRT0000           PRINT DISPLACEMENT DATA
+         B     DBUG0210              BUILD A NEW LINE
+         SPACE 1
+DBUG0230 CLC   OUTDATA,OUTDATA-1     LINE EMPTY?                GP99138
+         BE    EXIT0000              YES, EXIT
+         BAL   R10,PRT0000           PRINT DISPLACEMENT DATA
+         B     EXIT0000              EXIT
+* ------------------------------------------------------------------- *
+*             PRINT SUBHEADING                                        *
+* ------------------------------------------------------------------- *
+DBUG0300 BAL   R10,HEAD0000          PRINT HEADING
+         B     EXIT0000              EXIT
+* ------------------------------------------------------------------- *
+*             PRINT DATA                                              *
+* ------------------------------------------------------------------- *
+DBUG0310 L     R1,DBUGDATA           DATA ADDRESS
+         MVC   OUTDATA(120),0(R1)    COPY DATA                  GP99138
+         BAL   R10,PRT0000           PRINT
+         B     EXIT0000              EXIT
+* ------------------------------------------------------------------- *
+*             NO DISDEBUG DD PRESENT                                  *
+* ------------------------------------------------------------------- *
+DBUG1000 DS    0H
+         ITRACE ID=NODEBUG           CAUSE TRACE ENTRY
+*NEXT*   B     EXIT0000              EXIT
+EXIT0000 DS    0H
+         ITRACE ID=EXITDBUG                                     GP10085
+         L     R13,4(,R13)           RESTORE REGISTER 13
+         LM    R14,R12,12(R13)       RESTORE ALL OTHER REGISTERS
+         SR    R15,R15               GIVE GOOD RETURN CODE
+         BR    R14                   RETURN TO CALLER
+         SPACE 2
+* ------------------------------------------------------------------- *
+*             PRINT DATA                                              *
+* ------------------------------------------------------------------- *
+PRT0000  PUT   DISDEBUG,OUTCC        WRITE DEBUG OUTPUT         GP99138
+         AP    LINECT,P1             ADD 1 TO LINE COUNT
+         CLI   OUTCC,C' '            SINGLE SPACED?             GP99138
+         BE    PRT0010               NO                         GP99138
+         AP    LINECT,P1             ADD 1 TO LINE COUNT
+PRT0010  MVC   OUTCC(PRTL),OUTCC-1   CLEAR PRINT I/O AREA       GP99138
+         CP    LINECT,COMMMAXL       PAGE OVERFLOW?
+         BNHR  R10                   NO
+HEAD0000 MVC   OUTCC(DEBUGHDL),DEBUGHD                          GP99138
+         LA    R15,OUTCC+PRTL-10                                GP05169
+         MVC   0(10,R15),=X'D7818785402020202120'               GP05169
+         AP    PAGECT,P1     MAKE NEW PAGE COUNT                GP05169
+         ED    4(6,R15),PAGECT  SHOW PAGE NUMBER                GP05169
+         PUT   DISDEBUG,OUTCC        WRITE NEW HEADING          GP99138
+         MVC   OUTCC(PRTL),OUTCC-1   CLEAR PRINT I/O AREA       GP99138
+         MVC   OUTDATA(L'COMMDBSH),COMMDBSH                     GP99138
+         PUT   DISDEBUG,OUTCC        WRITE SUB HEADING          GP99138
+         MVC   OUTCC(PRTL),OUTCC-1   CLEAR PRINT I/O AREA       GP99138
+         PUT   DISDEBUG,OUTCC        BLANK LINE                 GP99138
+         ZAP   LINECT,P1             RESET LINE COUNT
+         BR    R10                   RETURN
+*---------------------------------------------------------------------*
+*                                                                     *
+*              WORK AREAS                                             *
+*                                                                     *
+*---------------------------------------------------------------------*
+DBUGFLAG DC    X'00'
+$DBUGOPN EQU   X'80'                 DCB IS OPEN
+WORKX    DC    XL4'00'
+P1       DC    P'1'
+PAGECT   DC    PL3'0'        PAGE COUNT                         GP05169
+LINECT   DC    PL3'0'
+XFFFF    DC    X'FFFFFFFF'
+         SPACE 2
+         DC    C' '
+OUTCC    DC    C' '                                             GP99138
+OUTDATA  DC    CL132' '                                         GP99138
+PRTL     EQU   *-OUTCC                                          GP99138
+         SPACE 2
+DEBUGHD  DS    0C
+         DC    C'1               DISASSEMBLER DEBUG'
+DEBUGHDL EQU   *-DEBUGHD
+PRTR     DS    0C
+         DC    C'TRACE TABLE FIRST '
+PRTR1ST  DC    CL8' '
+         DC    C'   LAST '
+PRTRLAST DC    CL8' '
+         DC    C'   CURRENT '
+PRTRCURR DC    CL8' '
+         DC    C' '
+PRTRL    EQU   *-PRTR
+PRIO     DS    0C
+         DC    C' DISMOD I/O AREA ADDRESS '
+PRIOA    DC    CL8' '
+         DC    C' '
+PRIOL    EQU   *-PRIO
+PRESD    DS    0C
+PRESDBA  DC    CL8' '
+         DC    C' '
+         DC    C'ESD BLOCK '                                    GP99139
+PRESDNXT DC    CL8' '
+         DC    C'  NAME '
+PRESDNM  DC    CL8' '
+         DC    C'  TYPE '
+PRESDTYP DC    CL2' '
+         DC    C'  ADDRESS '
+PRESDADR DC    CL7' '
+         DC    C'  SEGMENT '
+PRESDSEG DC    CL2' '
+         DC    C'  LENGTH '
+PRESDLEN DC    CL7' '
+         DC    C' '
+PRESDL   EQU   *-PRESD
+PRRLD    DS    0C
+PRRLDBA  DC    CL8' '
+         DC    C' '
+         DC    C'RLD BLOCK '                                    GP99139
+PRRLDNXT DC    CL8' '
+         DC    C'  DISP '
+PRRLDDSP DC    CL8' '
+         DC    C'  TYPE '
+PRRLDTYP DC    CL2' '
+         DC    C'  LENGTH '
+PRRLDLEN DC    CL4' '
+         DC    C'  POINTER '
+PRRLDPTR DC    CL4' '
+         DC    C'  POSITION '
+PRRLDPP  DC    CL4' '
+         DC    C'  DIR '
+PRRLDDIR DC    C' '
+         DC    C'  ESD '
+PRRLDESD DC    CL8' '
+         DC    C' '
+PRRLDL   EQU   *-PRRLD
+         SPACE 1
+PRVERP   DC    C' '                                             GP10085
+PRVERBA  DC    CL8' ',C' '        ADDRESS                       GP10085
+PRVERNXT DC    CL8' ',C'  '       LINK                          GP10085
+PRVERB   DC    CL7' VERIFY',C' @ '                              GP10085
+PRVEROFF DC    CL8' ',C' LN '                                   GP10085
+PRVERLEN DC    CL8' ',C' : '                                    GP10085
+PRVERTXT DC    CL8' ',C' '        ADDRESS                       GP10085
+PRVERTX2 DC    CL8' ',C' '        ADDRESS                       GP10085
+PRVERTX3 DC    CL8' ',C' '        ADDRESS                       GP10085
+PRVERTX4 DC    CL8' ',C' '        ADDRESS                       GP10085
+PRVERTX5 DC    CL8' ',C' '        ADDRESS                       GP10085
+PRVERTX6 DC    CL8' ',C' '        ADDRESS                       GP10085
+PRVERPL  EQU   *-PRVERP                                         GP10085
+         SPACE 1
+PRUSNG   DS    0C
+PRUSGBA  DC    CL8' '
+         DC    C' '
+         DC    C'USING '                                        GP99139
+PRUSGNXT DC    CL8' '
+         DC    C'  DSECT '
+PRUSGNME DC    CL8' '
+         DC    C'  LABEL '
+PRUSGLBL DC    CL8' '
+         DC    C'  BASE '
+PRUSGBSE DC    C' '
+         DC    C'  FLAGS '
+PRUSGFLG DC    CL2' '
+         DC    C'  DISP '
+PRUSGDSP DC    CL8' '
+         DC    C'  BEGN/END '                                   GP10085
+PRUSGBGN DC    CL8' '
+         DC    C'-'
+PRUSGEND DC    CL8' '
+         DC    C' '
+PRUSNGL  EQU   *-PRUSNG
+PRDSCT   DS    0C
+PRDSBA   DC    CL8' '
+         DC    C' '
+         DC    C'DSECT '                                        GP99139
+PRDSNXT  DS    CL8' '
+         DC    C'  DSECT NAME '
+PRDSNAME DC    CL8' '
+         DC    C'  1ST LABEL '
+PRDSLABL DC    CL8' '
+         DC    C' '
+PRDSCTL  EQU   *-PRDSCT
+PRBASE   DS    0C
+PRBSEBA  DS    CL8' '
+         DC    C' '
+         DC    C'BASE '                                         GP99139
+PRBSENXT DC    CL8' '
+         DC    C'  REGISTER '
+PRBSEREG DC    C' '
+         DC    C'  INSTRUCTION RANGE '
+PRBSEBGN DC    CL9' '
+PRBSEEND DC    CL9' '
+         DC    C'  DISP REFERRED TO '
+PRBSEDSP DC    CL9' '
+PRBASEL  EQU   *-PRBASE
+PRDATA   DS    0C
+PRDTABA  DC    CL8' '
+         DC    C' '
+PRDTADC  DC    C'DATA '                                         GP99139
+PRDTANXT DC    CL8' '
+         DC    C'  DISP '
+PRDTABGN DC    CL8' '
+         DC    C'-'
+PRDTAEND DC    CL8' '
+         DC    C'  LENGTH '
+PRDTALEN DC    CL8' ',C' '                                      GP99181
+PRDTAILN DC    CL4' '                                           GP99181
+         DC    C'  TYPE '
+PRDTATYP DC    CL2' ',C' '                                      GP99181
+PRDTASMT DC    CL2' '                                           GP99181
+         DC    C'  NAME '
+PRDTANME DC    CL8' '
+         DC    C'  LABEL '
+PRDTALBA DC    CL8' '
+         DC    C'+'
+PRDTALBD DC    CL8' '
+PRDATAL  EQU   *-PRDATA
+PRREF    DS    0C
+PRREFBA  DC    CL8' '
+         DC    C' '
+         DC    C'REF '                                          GP99139
+PRREFNXT DC    CL8' '
+         DC    C'  INSTRUCTION DISP '                           GP10085
+PRREFDSP DC    CL8' ',C'  LABEL 1 '                             GP10085
+PRREFAD1 DC    CL8' '
+         DC    C'-'
+PRREFO1D DC    CL8' ',C'  LABEL 2 '                             GP10085
+PRREFAD2 DC    CL8' '
+         DC    C'-'
+PRREFO2D DC    CL8' '
+PRREFL   EQU   *-PRREF
+         SPACE 1
+PRLABL   DS    0C
+PRLBLBA  DC    CL8' '
+         DC    C' '
+         DC    C'LABEL '                                        GP99139
+PRLBLNXT DC    CL8' '
+         DC    C'  LABEL NAME '
+PRLBLNM  DC    CL8' '
+         DC    C'  TYPE '
+PRLBLTYP DC    C' '
+         DC    C'  DISP '
+PRLBLDSP DC    CL9' '
+         DC    C' SOURCE '                                      GP99142
+PRLBLSRC DC    C' '                                             GP99142
+         DC    C' XREF '                                        GP99184
+PRLBLREF DC    CL8' '                                           GP99184
+         DC    C' STMT '                                        GP99184
+PRLBLSTM DC    CL6' ',C' '                                      GP99184
+PRLABLL  EQU   *-PRLABL
+PRDISP   DC    C'INSTRUCTION DISPLACEMENTS:'
+PRDISPL  EQU   *-PRDISP
+DISDEBUG DCB   DDNAME=DISDEBUG,      DEBUG DCB                         +
+               DSORG=PS,             .. SEQUENTIAL                     +
+               LRECL=133,            .. RECORD SIZE                    +
+               RECFM=FBA,            .. RECORD FORMAT                  +
+               MACRF=PM              .. PUT-MOVE MODE
+         LTORG
+         SPACE 2
+         COPY  DISASMDA
+*---------------------------------------------------------------------*
+*                                                                     *
+*              INTERFACE BLOCK                                        *
+*                                                                     *
+*---------------------------------------------------------------------*
+DBUGBLOK DBUGBLOK TYPE=DSECT
+*---------------------------------------------------------------------*
+*                                                                     *
+*              COMMON DATA MAP                                        *
+*                                                                     *
+*---------------------------------------------------------------------*
+DISASM00 DISASMCM TYPE=DSECT
+         END  DISASMDB

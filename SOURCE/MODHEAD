@@ -1,0 +1,58 @@
+         MACRO ,
+&NM     MODHEAD &BASE=(R12),&LOADWK=NO
+.*  MACRO CREATED BY G. POSTPISCHIL FOR UNIFORM PROGRAM ENTRY,  GP99139
+.*  AND ENTRY CONVENTION (B AROUND/DATA/LR 12,15) FOR PGMTRACE USE.
+         LCLA  &I,&J,&K,&N
+         LCLC  &BASUS,&OP,&PR,&LS
+&NM      START 0
+&NM      AMODE 31                                               GP99148
+&NM      RMODE 24            NON-RENT CODE WITH DCBS IN-LINE    GP99148
+         B     MODENT-&NM.(,R15)  BRANCH AROUND
+         DC    AL1(L'MODHEAD)
+MODHEAD  DC    C'&NM &SYSDATE &SYSTIME'
+MODSAVE  DC    18A(0)        SAVE AREA
+MODENT   STM   R14,R12,12(R13)  SAVE CALLER'S REGISTERS
+         LR    &BASE(1),R15  MAKE FIRST OR ONLY BASE
+&K       SETA  K'&BASE
+&N       SETA  N'&BASE
+&BASUS   SETC  '&BASE'
+         AIF   ('&BASE'(1,1) NE '(').ONLY1
+&BASUS   SETC  '&BASE'(2,&K-2)
+.ONLY1   AIF   (&N LT 2).NOMORE
+&LS      SETC  '&BASE(&N)'
+&PR      SETC  '&BASE(1)'
+         LA    &LS,2048
+&I       SETA  1             R12 ALREADY DONE
+.BASIC   AIF   (&I GE &N).NOMORE
+&I       SETA  &I+1
+&OP      SETC  '&BASE(&I)'
+         LA    &OP,2048(&LS,&PR)
+&PR      SETC  '&OP'
+         AGO   .BASIC
+.NOMORE  ANOP  ,
+         USING &NM,&BASUS
+         AIF   ('&LOADWK' EQ 'NO').NOWKLD
+         L     R11,=V(DISASM00)  GET COMMON WORK AREA
+.NOWKLD  USING DISASM00,R11
+         LA    R14,MODSAVE   GET LOCAL SAVE AREA
+         ST    R14,8(,R13)   CHAIN DOWN
+         ST    R13,4(,R14)   CHAIN UP
+         LR    R13,R14       NEW SAVE AREA
+&OP      SETC  '&BASE(1)'
+         AIF   ('&OP' EQ '12' OR '&OP' EQ 'R12').BASOK
+         MNOTE 8,'ONLY R12 WORKS CORRECTLY FOR BASE(1), BUT NOT &OP '
+.BASOK   ANOP  ,
+&I       SETA  1
+.TESTLUP AIF   (&I GE &N).MEND
+&I       SETA  &I+1
+&OP      SETC  '&BASE(&I)'
+         AIF   ('&OP' EQ '15' OR '&OP' EQ 'R15').BASERR
+         AIF   ('&OP' EQ '14' OR '&OP' EQ 'R14').BASERR
+         AIF   ('&OP' EQ '13' OR '&OP' EQ 'R13').BASERR
+         AIF   ('&OP' EQ '12' OR '&OP' EQ 'R12').BASERR
+         AIF   ('&OP' EQ '11' OR '&OP' EQ 'R11').BASERR
+         AIF   ('&OP' EQ '1' OR '&OP' EQ 'R1').BASERR
+         AIF   ('&OP' NE '0' AND '&OP' NE 'R0').TESTLUP
+.BASERR  MNOTE 8,'&OP IS NOT ACCEPTABLE AS A BASE REGISTER'
+         AGO   .TESTLUP
+.MEND    MEND  ,
